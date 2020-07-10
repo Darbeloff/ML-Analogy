@@ -11,12 +11,13 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 # N is batch size; D_in is input dimension;
 # H is hidden dimension; D_out is output dimension.
-N, D_in, H, D_out = 100, 3, 256, 1
+N, D_in, H, D_out = 1000, 3, 256, 1
 
 # Create random Tensors to hold inputs and outputs
 k = 1
 x = np.random.rand(N, D_in) # [F, L, theta]
-y = x[:,0]*x[:,1]-k*x[:,2]
+y = 10*x[:,0]*x[:,1]-k*x[:,2]
+#x = np.delete(x,0,1); D_in = 2;
 y = y[:, None]
 
 x_train_tensor = torch.from_numpy(x).float()
@@ -24,7 +25,7 @@ y_train_tensor = torch.from_numpy(y).float()
 
 dataset = TensorDataset(x_train_tensor, y_train_tensor)
 
-train_dataset, val_dataset = random_split(dataset, [80, 20])
+train_dataset, val_dataset = random_split(dataset, [int(0.8*N), int(0.2*N)])
 
 train_loader = DataLoader(dataset=train_dataset, batch_size=16)
 val_loader = DataLoader(dataset=val_dataset, batch_size=20)
@@ -91,4 +92,4 @@ for t in range(n_epochs):
         validation_loss = np.mean(val_losses)
         validation_losses.append(validation_loss)
 
-    print(f"[{t+1}] Training loss: {training_loss:.3f}\t Validation loss: {validation_loss:.3f}")
+    print(f"{t+1}\tTraining loss\t{training_loss:.3f}\tValidation loss\t{validation_loss:.3f}")

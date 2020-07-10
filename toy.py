@@ -91,4 +91,4 @@ for t in range(n_epochs):
         validation_loss = np.mean(val_losses)
         validation_losses.append(validation_loss)
 
-    print(f"[{t+1}] Training loss: {training_loss:.3f}\t Validation loss: {validation_loss:.3f}")
+    print(f"[{t+1}]\tTraining loss\t{training_loss:.3f}\tValidation loss\t{validation_loss:.3f}")
