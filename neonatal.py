@@ -15,7 +15,7 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 N, D_in, H, D_out = 1000, 5, 256, 1
 
 k = 1          # spring constant
-T = 1e-3       #[s] sampling period
+T = 1e-1       #[s] sampling period
 m = 1          #[kg] mass
 c = 1          # damper
 l = 0.5        # moment arm of muscle
@@ -64,8 +64,8 @@ val_loader = DataLoader(dataset=val_dataset, batch_size=20)
 
 # Use the nn package to define our model and loss function.
 model = torch.nn.Sequential(
-	#torch.nn.Linear(D_in, H, bias=False),
-	torch.nn.LSTM(input_size=D_in,hidden_size=3),
+	torch.nn.Linear(D_in, H, bias=False),
+	#torch.nn.LSTM(input_size=D_in,hidden_size=3),
 	torch.nn.ReLU(),
 	torch.nn.ReLU(),
 	torch.nn.ReLU(),
