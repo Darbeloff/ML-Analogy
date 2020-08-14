@@ -12,7 +12,7 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 # N is batch size; D_in is input dimension;
 # H is hidden dimension; D_out is output dimension.
-N, H, D_out = 1000, 256, 1
+N, H, nc = 14, 256, 2
 
 k = 1          # stiffness
 T = 1e-2       #[s] sampling period
@@ -33,26 +33,27 @@ def train_model(x,y):
 
 	dataset = TensorDataset(x_train_tensor, y_train_tensor)
 
-	train_dataset, val_dataset = random_split(dataset, [int(0.8*N), N-int(0.8*N)])
+	train_dataset, val_dataset = random_split(dataset, [int(N/2),int(N/2)])
 
-	train_loader = DataLoader(dataset=train_dataset, batch_size=16)
-	val_loader = DataLoader(dataset=val_dataset, batch_size=20)
+	train_loader = DataLoader(dataset=train_dataset, batch_size=D_in)
+	val_loader = DataLoader(dataset=val_dataset, batch_size=D_in)
 
 	# Use the nn package to define our model and loss function.
-	model = torch.nn.Sequential(
-		torch.nn.Linear(D_in, H),
-		torch.nn.ReLU(),
-		torch.nn.ReLU(),
-		torch.nn.ReLU(),
-		torch.nn.Linear(H, D_out),
-	)
+	# model = torch.nn.Sequential(
+	# 	torch.nn.Linear(D_in, H),
+	# 	torch.nn.ReLU(),
+	# 	torch.nn.ReLU(),
+	# 	torch.nn.ReLU(),
+	# 	torch.nn.Linear(H, D_out),
+	# )
+	model = torch.nn.Linear(D_in, D_out, bias=False)
 	loss_fn = torch.nn.MSELoss(reduction='sum')
 
 	# Use the optim package to define an Optimizer that will update the weights of
 	# the model for us. Here we will use Adam; the optim package contains many other
 	# optimization algorithms. The first argument to the Adam constructor tells the
 	# optimizer which Tensors it should update.
-	learning_rate = 1e-4
+	learning_rate = 1e-2
 	n_epochs = 10000
 	training_losses = []
 	validation_losses = []
@@ -101,11 +102,14 @@ def train_model(x,y):
 			validation_losses.append(validation_loss)
 
 		print(f"[{t+1}] Training loss: {training_loss:.3f}\t Validation loss: {validation_loss:.3f}")
-		if t>2 and validation_losses[-1] >= validation_losses[-2]:
+		# if t>2*nc and validation_losses[-nc:-1] >= validation_losses[-2*nc:-nc-1]:
+		# 	print(t)
+		# 	break
+		if validation_loss<1e-5:
 			break
 
 	model.eval()
-
+	
 	plt.figure()
 	plt.semilogy(range(len(training_losses)), training_losses, label='Training Loss')
 	plt.semilogy(range(len(training_losses)), validation_losses, label='Validation Loss')
@@ -113,7 +117,7 @@ def train_model(x,y):
 	plt.ylabel('Loss')
 	plt.legend()
 	plt.show()
-
+	
 	return model
 
 def u2F(u_t, u_tm1, u_tm2, f_tm1, f_tm2):
@@ -129,25 +133,17 @@ def end2end(u_t, u_tm1, u_tm2, f_tm1, f_tm2, th_tm1, th_tm2):
 
 # Create random Tensors to hold inputs and outputs
 x = 2*np.random.rand(N, 5) # [u[t], u[t-1], u[t-2], f[t-1], f[t-2]]
-stage_1 = train_model(x, u2F(x[:,0], x[:,1], x[:,2], x[:,3], x[:,4]))
+#stage_1 = train_model(x, u2F(x[:,0], x[:,1], x[:,2], x[:,3], x[:,4]))
 
 x = 2*np.random.rand(N, 8) # [u[t], u[t-1], u[t-2], f[t], f[t-1], f[t-2], theta[t-1], theta[t-2]]
-stage_2 = train_model(x, uF2th(x[:,0], x[:,1], x[:,2], x[:,3], x[:,4], x[:,5], x[:,6], x[:,7]))
+# stage_2 = train_model(x, uF2th(x[:,0], x[:,1], x[:,2], x[:,3], x[:,4], x[:,5], x[:,6], x[:,7]))
 
 x = 2*np.random.rand(N, 7) # [u[t], u[t-1], u[t-2], f[t-1], f[t-2], theta[t-1], theta[t-2]]
 e2e = train_model(x, end2end(x[:,0], x[:,1], x[:,2], x[:,3], x[:,4], x[:,5], x[:,6]))
 
-'''
-for x_batch, y_batch in train_loader:
-	in_tensor = x_batch[0]
-	break
 def nn_plant(u_t, u_tm1, u_tm2, f_tm1, f_tm2):
-	in_tensor[0] = u_t
-	in_tensor[1] = u_tm1
-	in_tensor[2] = u_tm2
-	in_tensor[3] = f_tm1
-	in_tensor[3] = f_tm2
-	return model(in_tensor)[0].item()
+	in_tensor = torch.tensor([[u_t, u_tm1, u_tm2, f_tm1, f_tm2]]).float()
+	return stage_1(in_tensor)[0].item()
 
 def reference(t):
 	return 1 # Unit Step
@@ -170,4 +166,3 @@ plt.xlabel('Time')
 plt.title('Response to Unit Step Input')
 plt.legend()
 plt.show()
-'''
