@@ -53,11 +53,11 @@ def train_model(x,y):
 	# the model for us. Here we will use Adam; the optim package contains many other
 	# optimization algorithms. The first argument to the Adam constructor tells the
 	# optimizer which Tensors it should update.
-	learning_rate = 1e-2
+	learning_rate = .02
 	n_epochs = 10000
 	training_losses = []
 	validation_losses = []
-	optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+	optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
 	for t in range(n_epochs):
 		batch_losses = []
 		for x_batch, y_batch in train_loader:
@@ -140,6 +140,8 @@ x = 2*np.random.rand(N, 8) # [u[t], u[t-1], u[t-2], f[t], f[t-1], f[t-2], theta[
 
 x = 2*np.random.rand(N, 7) # [u[t], u[t-1], u[t-2], f[t-1], f[t-2], theta[t-1], theta[t-2]]
 e2e = train_model(x, end2end(x[:,0], x[:,1], x[:,2], x[:,3], x[:,4], x[:,5], x[:,6]))
+for param in e2e.parameters():
+	print(param.data)
 
 def nn_plant(u_t, u_tm1, u_tm2, f_tm1, f_tm2):
 	in_tensor = torch.tensor([[u_t, u_tm1, u_tm2, f_tm1, f_tm2]]).float()
