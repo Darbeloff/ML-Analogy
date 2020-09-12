@@ -118,15 +118,36 @@ def u2th(u_t, u_tm1, u_tm2, th_tm1, th_tm2):
 def controller(model, u_tm1, u_tm2, th_tm1, th_tm2, ref):
 	loss_fn = torch.nn.MSELoss(reduction='sum')
 	n_epochs = 100
-	learning_rate = 0.5
+	learning_rate = 1e-1
 	u_t = u_tm1
+	u_vec = [u_t]
+	l_vec = []
+	x_vec = []
+	g_vec = []
 	for t in range(n_epochs):
 		inp = Variable(torch.tensor([[u_t, u_tm1, u_tm2, th_tm1, th_tm2]]).type(dtype), requires_grad=True)
 		x_t = inp.mm(model)
 		loss = loss_fn(x_t, torch.tensor([[ref]]).float())
 		loss.backward()
 		u_t -= learning_rate*inp.grad.data[0][0]
+		g_vec.append(inp.grad.data[0][0])
+		print(u_t, loss, inp.grad.data[0][0])
 		inp.grad.data.zero_()
+		model.grad.data.zero_()
+		u_vec.append(u_t)
+		l_vec.append(loss.data)
+		x_vec.append(x_t.data)
+
+	plt.figure()
+	plt.subplot(1,2,1)
+	plt.plot(range(n_epochs+1), u_vec, label='u')
+	plt.plot(range(n_epochs), l_vec, label='loss')
+	plt.plot(range(n_epochs), x_vec, label='x')
+	plt.legend()
+	plt.subplot(1,2,2)
+	plt.plot(range(n_epochs), g_vec)
+	plt.show()
+	exit(0)
 
 	return u_t
 
@@ -139,21 +160,21 @@ def reference(t):
 	#return np.sin(t)
 
 t_vec = np.arange(0, 10, T)
-# u_vec = [0,0]
-# x_vec = [0,0]
-# x_vec_sim = []
-# for t in t_vec:
-# 	u_vec.append(reference(t))
-# 	x_vec_sim.append( torch.tensor([[u_vec[-1], u_vec[-2], u_vec[-3], x_vec[-1], x_vec[-2]]]).float().mm(model) )
-# 	x_vec.append(u2th(u_vec[-1], u_vec[-2], u_vec[-3], x_vec[-1], x_vec[-2]))
-# plt.figure()
-# plt.plot(t_vec, u_vec[2:], label='u')
-# plt.plot(t_vec, x_vec[2:], label='x')
-# plt.plot(t_vec, x_vec_sim, label='x_sim')
-# plt.xlabel('Time')
-# plt.title('Response to Unit Step Input')
-# plt.legend()
-# plt.show()
+u_vec = [0,0]
+x_vec = [0,0]
+x_vec_sim = []
+for t in t_vec:
+	u_vec.append(reference(t))
+	x_vec_sim.append( torch.tensor([[u_vec[-1], u_vec[-2], u_vec[-3], x_vec[-1], x_vec[-2]]]).float().mm(model) )
+	x_vec.append(u2th(u_vec[-1], u_vec[-2], u_vec[-3], x_vec[-1], x_vec[-2]))
+plt.figure()
+plt.plot(t_vec, u_vec[2:], label='u')
+plt.plot(t_vec, x_vec[2:], label='x')
+plt.plot(t_vec, x_vec_sim, label='x_sim')
+plt.xlabel('Time')
+plt.title('Response to Unit Step Input')
+plt.legend()
+plt.show()
 
 u_vec = [0,0]
 x_vec = [0,0]
