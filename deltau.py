@@ -109,16 +109,18 @@ def train_model(x,y):
 	# plt.ylabel('Loss')
 	# plt.legend()
 	# plt.show()
-	
+	print(model_w)
 	return model_w
 
 def u2th(u_t, u_tm1, u_tm2, th_tm1, th_tm2):
+	# print((4*I-2*L*L*c*T+L*L*k*T*T)/ (4*I+2*L*L*c*T+L*L*k*T*T))
+	# exit(0)
 	return (l*T*T*(u_t+2*u_tm1+u_tm2) -(-8*I+2*L*L*k*T*T)*th_tm1 -(4*I-2*L*L*c*T+L*L*k*T*T)*th_tm2) / (4*I+2*L*L*c*T+L*L*k*T*T)
 
 def controller(model, u_tm1, u_tm2, th_tm1, th_tm2, ref):
 	loss_fn = torch.nn.MSELoss(reduction='sum')
 	n_epochs = 100
-	learning_rate = 1e-1
+	learning_rate = 1e3
 	u_t = u_tm1
 	u_vec = [u_t]
 	l_vec = []
@@ -129,12 +131,13 @@ def controller(model, u_tm1, u_tm2, th_tm1, th_tm2, ref):
 		x_t = inp.mm(model)
 		loss = loss_fn(x_t, torch.tensor([[ref]]).float())
 		loss.backward()
+		# print(u_t, u_tm1)
 		u_t -= learning_rate*inp.grad.data[0][0]
 		g_vec.append(inp.grad.data[0][0])
-		print(u_t, loss, inp.grad.data[0][0])
-		inp.grad.data.zero_()
-		model.grad.data.zero_()
-		u_vec.append(u_t)
+		print(u_t, loss, inp.grad.data[0][0], type(u_t))
+		# inp.grad.data.zero_()
+		# model.grad.data.zero_()
+		u_vec.append(inp.data[0,0])
 		l_vec.append(loss.data)
 		x_vec.append(x_t.data)
 
