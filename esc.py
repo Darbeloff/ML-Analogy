@@ -11,8 +11,10 @@ from torch.utils.data import Dataset, TensorDataset, DataLoader
 from torch.utils.data.dataset import random_split
 from torch.autograd import Variable
 
-from matplotlib import pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+from matplotlib import cm
+from matplotlib.ticker import LinearLocator, FormatStrFormatter
+import matplotlib.pyplot as plt
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 dtype = torch.FloatTensor
@@ -31,11 +33,15 @@ with open('esc.csv') as file:
 			first = False
 		else:
 			x.append([float(row['Input_Power']), float(lastSpeed)])
-			y.append([float(row['Speed']), float(row['Output_Power'])])
+			y.append([-float(row['Speed']), -float(row['Efficiency'])])
 		lastSpeed = row['Speed']
 
 x = np.array(x)
 y = np.array(y)
+# fig = plt.figure()
+# plt.plot(x[:,0], x[:,1],'r.')
+# plt.show()
+# exit()
 
 x_shift = x.min(axis=0)
 y_shift = y.min(axis=0)
@@ -48,14 +54,15 @@ for i in range(len(x)):
 	x[i]/=x_transform
 	y[i]/=y_transform
 
-triObj_p = Triangulation(x[:,0], x[:,1]) 
-plant_p = LinearTriInterpolator(triObj_p,y[:,0])
-triObj_s = Triangulation(x[:,0], x[:,1]) 
-plant_s = LinearTriInterpolator(triObj_s,y[:,1])
+triObj = Triangulation(x[:,0], x[:,1]) 
+plant_s = LinearTriInterpolator(triObj,y[:,0])
+plant_p = LinearTriInterpolator(triObj,y[:,1])
 
 fig = plt.figure()
 ax = fig.gca(projection='3d')
 ax.plot(x[:,0], x[:,1], y[:,0],'r.')
+plt.xlabel('Input Power')
+plt.ylabel('Speed')
 # # plt.show()
 # xs = np.linspace(0,1,200)
 # ys = np.linspace(0,1,200)
@@ -64,7 +71,9 @@ ax.plot(x[:,0], x[:,1], y[:,0],'r.')
 # for xi in range(np.shape(xs)[0]):
 # 	for yi in range(np.shape(xs)[1]):
 # 		zs[xi,yi] = plant_p(xs[xi,yi],ys[xi,yi])
-# surf = ax.plot_surface(xs,ys,zs)
+# zs = np.nan_to_num(zs)
+# surf = ax.plot_surface(xs,ys,zs, rstride=1, cstride=1, cmap=cm.coolwarm, linewidth=0, antialiased=False)
+# ax.view_init(azim=0, elev=90)
 # plt.show()
 # exit(0)
 
@@ -100,7 +109,7 @@ def train_model(x,y):
 	# optimization algorithms. The first argument to the Adam constructor tells the
 	# optimizer which Tensors it should update.
 	learning_rate = .0001
-	n_epochs = 500
+	n_epochs = 3000
 	training_losses = []
 	validation_losses = []
 	optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
@@ -150,8 +159,8 @@ def train_model(x,y):
 
 		print(f"[{t+1}] Training loss: {training_loss:.3f}\t Validation loss: {validation_loss:.3f}")
 		
-		# if t>10 and validation_losses[-1]<0.09 and validation_losses[-2]<validation_losses[-1]:
-		# 	break
+		if t>1000 and validation_losses[-1]<0.1 and np.mean(validation_losses[-20:-10])<np.mean(validation_losses[-9:-1]):
+			break
 
 	model.eval()
 	
@@ -168,15 +177,27 @@ def train_model(x,y):
 # Create random Tensors to hold inputs and outputs
 model = train_model(x, y)
 
+xs = np.linspace(0,1,200)
+ys = np.linspace(0,1,200)
+xs,ys = np.meshgrid(xs,ys)
+zs = np.zeros(np.shape(xs))
+for xi in range(np.shape(xs)[0]):
+	for yi in range(np.shape(xs)[1]):
+		zs[xi,yi] = model(torch.tensor([[xs[xi,yi],ys[xi,yi]]]).type(dtype))[0,0].item()
+zs = np.nan_to_num(zs)
+surf = ax.plot_surface(xs,ys,zs, rstride=1, cstride=1, cmap=cm.coolwarm, linewidth=0, antialiased=False)
+# plt.show()
+# exit()
+
 t_vec = range(100)
-p_in_vec = [0.2]
-spd_vec = [0.9]
+p_in_vec = [0.3]
+spd_vec = [0.1]
 p_out_vec = []
 p_out_sim = []
 spd_sim = []
 
 ## Controller
-n_epochs = 100
+n_epochs = 200
 loss_fn = torch.nn.MSELoss(reduction='sum')
 inp = Variable(torch.tensor([[p_in_vec[-1]+0.0, spd_vec[-1]+0.0]]).type(dtype), requires_grad=True)
 gradient_mask = torch.zeros(1,2)
@@ -185,7 +206,7 @@ inp.register_hook(lambda grad: grad.mul_(gradient_mask))
 optimizer = torch.optim.Adam([inp], lr=.02)
 for t in range(n_epochs):
 	y0 = model(inp)
-	loss = loss_fn(y0[0,0], torch.tensor([[y0.data[0,0]+0.1]])[0,0])
+	loss = loss_fn(y0[0,0], torch.tensor([[y0[0,0].item()+0.1]])[0,0])
 	optimizer.zero_grad()
 	loss.backward()
 	optimizer.step()
@@ -193,12 +214,14 @@ for t in range(n_epochs):
 	p_out_sim.append(y0[0,0].item())
 	spd_sim.append(y0[0,1].item())
 	p_in_vec.append(inp[0,0].item())
-	# breakpoint()
 	spd_vec.append(plant_s(p_in_vec[-1], spd_vec[-1]).data.item())
-	inp[0,1] = spd_vec[-1]
+	inp[0,1].data.copy_(torch.tensor(spd_vec[-1]))
 	p_out_vec.append(plant_p(p_in_vec[-1], spd_vec[-1]).data.item())
-	# breakpoint()
-	ax.plot([p_in_vec[-1]], [spd_vec[-1]], [p_out_vec[-1]], 'r+')
-	ax.plot([p_in_vec[-1]], [spd_vec[-1]], [p_out_sim[-1]], 'b+')
 
+	# ax.plot([p_in_vec[-1]], [spd_vec[-1]], [p_out_vec[-1]], 'g+')
+	# ax.plot([p_in_vec[-1]], [spd_vec[-1]], [p_out_sim[-1]], 'b+')
+
+	ax.plot([p_in_vec[-1]], [spd_vec[-1]], [1], 'k+', zorder=10)
+
+ax.view_init(azim=0, elev=90)
 plt.show()
