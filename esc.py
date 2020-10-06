@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
-import csv, scipy.interpolate
+import csv
 import numpy as np
+from matplotlib.tri import Triangulation, LinearTriInterpolator
+
 import torch
 import torch.optim as optim
 import torch.nn as nn
@@ -8,7 +10,9 @@ from torchviz import make_dot
 from torch.utils.data import Dataset, TensorDataset, DataLoader
 from torch.utils.data.dataset import random_split
 from torch.autograd import Variable
+
 from matplotlib import pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 dtype = torch.FloatTensor
@@ -43,6 +47,26 @@ y_transform = y.max(axis=0)
 for i in range(len(x)):
 	x[i]/=x_transform
 	y[i]/=y_transform
+
+triObj_p = Triangulation(x[:,0], x[:,1]) 
+plant_p = LinearTriInterpolator(triObj_p,y[:,0])
+triObj_s = Triangulation(x[:,0], x[:,1]) 
+plant_s = LinearTriInterpolator(triObj_s,y[:,1])
+
+fig = plt.figure()
+ax = fig.gca(projection='3d')
+ax.plot(x[:,0], x[:,1], y[:,0],'r.')
+# # plt.show()
+# xs = np.linspace(0,1,200)
+# ys = np.linspace(0,1,200)
+# xs,ys = np.meshgrid(xs,ys)
+# zs = np.zeros(np.shape(xs))
+# for xi in range(np.shape(xs)[0]):
+# 	for yi in range(np.shape(xs)[1]):
+# 		zs[xi,yi] = plant_p(xs[xi,yi],ys[xi,yi])
+# surf = ax.plot_surface(xs,ys,zs)
+# plt.show()
+# exit(0)
 
 def train_model(x,y):
 	if len(np.shape(y))==1:
@@ -141,51 +165,40 @@ def train_model(x,y):
 	
 	return model
 
-def controller(model, p_in, speed, deltaP):
-	DEBUG = False
-	n_epochs = 1
-	learning_rate = 1e-1
-	loss_fn = torch.nn.MSELoss(reduction='sum')
-
-	inp = Variable(torch.tensor([[p_in, speed]]).type(dtype), requires_grad=True)
-	gradient_mask = torch.zeros(1,2)
-	gradient_mask[0,0] = 1.0
-	inp.register_hook(lambda grad: grad.mul_(gradient_mask))
-
-	optimizer = torch.optim.Adam([inp], lr=learning_rate)
-	for t in range(n_epochs):
-		inp_cpy = inp.detach().clone()
-		x_t = model(inp)
-		# print(x_t, inp[0,0])
-		loss = loss_fn(x_t[0,0], x_t[0,0]+deltaP)
-		optimizer.zero_grad()
-		# print('here')
-		loss.backward()
-		optimizer.step()
-		# print(inp_cpy, inp, '~~')
-		# exit(0)
-	
-	return inp.data[0,0]+0.0
-
 # Create random Tensors to hold inputs and outputs
 model = train_model(x, y)
-plant_p = scipy.interpolate.interp2d(x[:,0], x[:,1], y[:,0])
-plant_s = scipy.interpolate.interp2d(x[:,0], x[:,1], y[:,1])
 
 t_vec = range(100)
-p_in_vec = [x[0,0]]
-spd_vec = [x[0,1]]
+p_in_vec = [0.2]
+spd_vec = [0.9]
 p_out_vec = []
 p_out_sim = []
 spd_sim = []
-for t in t_vec:
-	p_in_vec.append(controller(model, p_in_vec[-1], spd_vec[-1], 0.1))
-	sim = model(torch.tensor([[p_in_vec[-1], spd_vec[-1]]]).float())
-	spd_sim.append(sim.data[0,0])
-	p_out_sim.append(sim.data[0,1])
-	p_out_vec.append(plant_p(p_in_vec[-1], spd_vec[-1]))
-	spd_vec.append(plant_s(p_in_vec[-1], spd_vec[-1]))
 
-plt.figure()
-plt.plot(p_out_vec)
+## Controller
+n_epochs = 100
+loss_fn = torch.nn.MSELoss(reduction='sum')
+inp = Variable(torch.tensor([[p_in_vec[-1]+0.0, spd_vec[-1]+0.0]]).type(dtype), requires_grad=True)
+gradient_mask = torch.zeros(1,2)
+gradient_mask[0,0] = 1.0
+inp.register_hook(lambda grad: grad.mul_(gradient_mask))
+optimizer = torch.optim.Adam([inp], lr=.02)
+for t in range(n_epochs):
+	y0 = model(inp)
+	loss = loss_fn(y0[0,0], torch.tensor([[y0.data[0,0]+0.1]])[0,0])
+	optimizer.zero_grad()
+	loss.backward()
+	optimizer.step()
+
+	p_out_sim.append(y0[0,0].item())
+	spd_sim.append(y0[0,1].item())
+	p_in_vec.append(inp[0,0].item())
+	# breakpoint()
+	spd_vec.append(plant_s(p_in_vec[-1], spd_vec[-1]).data.item())
+	inp[0,1] = spd_vec[-1]
+	p_out_vec.append(plant_p(p_in_vec[-1], spd_vec[-1]).data.item())
+	# breakpoint()
+	ax.plot([p_in_vec[-1]], [spd_vec[-1]], [p_out_vec[-1]], 'r+')
+	ax.plot([p_in_vec[-1]], [spd_vec[-1]], [p_out_sim[-1]], 'b+')
+
 plt.show()
