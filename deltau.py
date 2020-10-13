@@ -242,16 +242,18 @@ u_vec = [0,0]
 x_vec = [0,0]
 x_vec_sim = []
 l_vec = []
+R = 0.00001
+R=0
 for t in t_vec:
 	ref = reference(t)
 	u_vec.append(controller(model, u_vec[-1], u_vec[-2], x_vec[-1], x_vec[-2], ref))
 	x_vec_sim.append( model(torch.tensor([[u_vec[-1], u_vec[-2], u_vec[-3], x_vec[-1], x_vec[-2]]]).float()) )
 	x_vec.append(u2th(u_vec[-1], u_vec[-2], u_vec[-3], x_vec[-1], x_vec[-2]))
-	l_vec.append((x_vec[-1]-ref)**2+0.001*u_vec[-1]**2)
+	l_vec.append((x_vec[-1]-ref)**2+R*u_vec[-1]**2)
 plt.figure()
 plt.plot(t_vec, u_vec[2:], label='u')
 plt.plot(t_vec, x_vec[2:], label='x')
-plt.plot(t_vec, x_vec_sim, label='x_sim')
+# plt.plot(t_vec, x_vec_sim, label='x_sim')
 plt.plot(t_vec, l_vec, label='loss')
 plt.xlabel('Time')
 plt.title('Response to Unit Step Input')

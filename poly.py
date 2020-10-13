@@ -14,7 +14,7 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 dtype = torch.FloatTensor
 # N is batch size; D_in is input dimension;
 # H is hidden dimension; D_out is output dimension.
-N, H = 50, 256
+N, H = 20, 256
 
 f = lambda th: th**4+th**3-2*th**2-3*th
 
@@ -113,7 +113,7 @@ def train_model(x,y):
 model = train_model(x,y)
 model.train()
 plt.figure()
-plt.plot(x,y,'k.')
+plt.plot(x,y,'k.',label='Data')
 
 ## Test model
 # x_test = np.linspace(-2,2,40)
@@ -125,7 +125,7 @@ plt.plot(x,y,'k.')
 # exit(0)
 
 ## Controller
-n_epochs = 100
+n_epochs = 50
 loss_fn = torch.nn.MSELoss(reduction='sum')
 x0 = -1.8
 inp = Variable(torch.tensor([[x0+0.0]]).type(dtype), requires_grad=True)
@@ -133,14 +133,22 @@ inp = Variable(torch.tensor([[x0+0.0]]).type(dtype), requires_grad=True)
 # gradient_mask[0,0] = 1.0
 # inp.register_hook(lambda grad: grad.mul_(gradient_mask))
 optimizer = torch.optim.SGD([inp], lr=.2)
+opt_steps_x = []
+opt_steps_y = []
 for t in range(n_epochs):
 	y0 = model(inp)
 	loss = loss_fn(y0, torch.tensor([[y0.item()-0.1]]))
 	optimizer.zero_grad()
 	loss.backward()
 	optimizer.step()
-	plt.plot(inp.data[0,0]+0.0, f(inp.data[0,0]+0.0), 'r+')
-	plt.show(block=False)
-	plt.pause(0.5)
+	opt_steps_x.append(inp.data[0,0]+0.0)
+	opt_steps_y.append(f(inp.data[0,0]+0.0))
 
+plt.plot(opt_steps_x, opt_steps_y, 'r+', label='Steps')
+plt.plot(opt_steps_x[np.argmin(opt_steps_y)], min(opt_steps_y), 'g*', label='Final')
+
+plt.xlabel('x')
+plt.ylabel('f(x)')
+plt.legend(loc='upper center')
+plt.tight_layout()
 plt.show()

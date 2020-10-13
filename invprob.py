@@ -10,9 +10,9 @@ from matplotlib import pyplot as plt
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-N = 1000		# simulation duration in steps
+N = 1500		# simulation duration in steps
 E = 100			# number of epochs
-rho = 600		# learning rate
+rho = 800		# learning rate
 M = 1			# MPC look ahead
 
 k = 1          # stiffness
@@ -55,6 +55,7 @@ u = np.zeros(len(time))
 F = np.zeros(len(time))
 x = np.zeros(len(time))
 r = np.zeros(len(time))
+J = np.zeros(len(time))
 for t in range(len(time)-M+1):                # Real time
 	r[t] = ref(time[t])
 	dJdu = np.zeros(M)				# dJ[t+i]/du[t]
@@ -100,6 +101,7 @@ for t in range(len(time)-M+1):                # Real time
 	u[t] = u[t-1]-rho*np.sum(dJdu)
 	F[t] = u2F(u[t], u[t-1], u[t-2], F[t-1], F[t-2])
 	x[t] = u2th(u[t], u[t-1], u[t-2], x[t-1], x[t-2])
+	J[t] = (x[t]-r[t])**2
 
 if M>1:
 	time = np.delete(time, np.arange(len(time)-M+1,len(time)))
@@ -108,17 +110,13 @@ if M>1:
 	x = np.delete(x, np.arange(len(x)-M+1,len(x)))
 	r = np.delete(r, np.arange(len(r)-M+1,len(r)))
 
-print(np.shape(time), np.shape(u))
+print(np.sum(J))
 
 plt.figure()
 plt.plot(time, u, label='u')
-plt.plot(time, F, label='F')
-plt.plot(time, x, label='x')
+# plt.plot(time, F, label='F')
+plt.plot(time, x, label='ξ')
 plt.plot(time, r, label='r')
-plt.axhline()
 plt.xlabel('Time')
-plt.title('Response to Unit Step Input')
 plt.legend()
 plt.show()
-
-#print(np.sum(np.absolute(e_vec)))

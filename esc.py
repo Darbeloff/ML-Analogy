@@ -134,6 +134,7 @@ def train_model(x,y):
 			model.train()
 			# Forward pass: compute predicted y by passing x to the model.
 			y_pred = model(x_batch)
+			breakpoint()
 
 			# Compute and print loss.
 			loss = loss_fn(y_pred, y_batch)
