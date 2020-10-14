@@ -16,17 +16,21 @@ import matplotlib.pyplot as plt
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 dtype = torch.FloatTensor
+torch.manual_seed(1)
 # N is batch size; D_in is input dimension;
 # H is hidden dimension; D_out is output dimension.
 N, H = 20, 256
 
 def f(x,y):
-	out = (1-x)**2+100*(y-x**2)**2
-	if (x-1)**3-y+1>0 or x+y-2>0:
+	out = -(np.cos((x-0.1)*y))**2-x*np.sin(3*x+y)
+	t=np.arctan2(x,y)
+	if x**2+y**2>=(2*np.cos(t)-0.5*np.cos(2*t)-0.25*np.cos(3*t)-0.125*np.cos(4*t))**2+(2*np.sin(t))**2:
 		out = float('nan')
 	return out
-x_min, x_max, y_min, y_max = -1.5, 1.5, -0.5, 2.5
-density = 50
+# x_min, x_max, y_min, y_max = -2.25, 2.5, -2.5, 1.75
+x_min, x_max, y_min, y_max = 1.2, 2.5, -0.3, 1.75
+density = 100
+x0, y0 = 1.75, -0.3
 
 xx,yy = np.meshgrid(np.linspace(x_min,x_max,density), np.linspace(y_min,y_max,density))
 zz = np.zeros(np.shape(xx))
@@ -40,18 +44,21 @@ zz = np.nan_to_num(zz,nan=np.nanmax(z_lin))
 z_lin = np.nan_to_num(z_lin,nan=np.nanmax(z_lin))
 
 fig = plt.figure()
-ax = fig.add_subplot(111, projection='3d')
-ax.plot_surface(xx,yy,zz, rstride=1, cstride=1, cmap=cm.coolwarm, linewidth=0, antialiased=False)
-ax.view_init(azim=0, elev=90)
+ax1 = fig.add_subplot(111, projection='3d')
+ax1.plot_surface(xx,yy,zz, rstride=1, cstride=1, cmap=cm.coolwarm, linewidth=0, antialiased=False)
+ax1.view_init(azim=0, elev=90)
 plt.xlabel('x')
 plt.ylabel('y')
 plt.tight_layout()
-ax.set_zticks([])
+ax1.set_zticks([])
 # plt.show()
 # exit(0)
 
 z_lin-=np.min(z_lin)
 z_lin/=np.max(z_lin)
+min_i = np.argmin(z_lin)
+xm = x_lin[min_i]
+ym = y_lin[min_i]
 
 def train_model(x,y):
 	if len(np.shape(x))==1:
@@ -66,8 +73,8 @@ def train_model(x,y):
 	N_train = int(4*len(y)/5)
 	train_dataset, val_dataset = random_split(dataset, [N_train,len(y)-N_train])
 
-	train_loader = DataLoader(dataset=train_dataset, batch_size=10)
-	val_loader = DataLoader(dataset=val_dataset, batch_size=10)
+	train_loader = DataLoader(dataset=train_dataset, batch_size=20)
+	val_loader = DataLoader(dataset=val_dataset, batch_size=20)
 
 	# Use the nn package to define our model and loss function.
 	model = torch.nn.Sequential(
@@ -84,7 +91,7 @@ def train_model(x,y):
 	# optimization algorithms. The first argument to the Adam constructor tells the
 	# optimizer which Tensors it should update.
 	learning_rate = .002
-	n_epochs = 300
+	n_epochs = 500
 	training_losses = []
 	validation_losses = []
 	optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
@@ -128,8 +135,8 @@ def train_model(x,y):
 
 		print(f"[{t+1}] Training loss: {training_loss:.3f}\t Validation loss: {validation_loss:.3f}")
 
-		# if validation_loss<1e-2:
-		# 	break
+		if np.mean(validation_losses[-20:-10])<np.mean(validation_losses[-9:-1]):
+			break
 	
 	# plt.figure()
 	# plt.semilogy(range(len(training_losses)), training_losses, label='Training Loss')
@@ -142,33 +149,50 @@ def train_model(x,y):
 	model.eval()
 	return model
 
-x = np.concatenate((np.transpose(x_lin), np.transpose(y_lin)))
-y = np.transpose(z_lin)
-model = train_model(x,y)
-model.train()
-plt.figure()
-plt.plot(x,y,'k.',label='Data')
+x = torch.from_numpy(np.concatenate((x_lin[:,None], y_lin[:,None]), 1)).float()
+y = torch.from_numpy(z_lin[:,None]).float()
+# model = train_model(x,y)
 
-## Test model
-# x_test = np.linspace(-2,2,40)
-# y_test = []
-# for x in x_test:
-# 	y_test.append(model(torch.tensor([[x]]).float()).item())
-# plt.plot(x_test, y_test,'r')
-# plt.show()
-# exit(0)
+# Save/Load
+# torch.save(model.state_dict(), 'townsend.pt')
+model = torch.nn.Sequential(
+		torch.nn.Linear(2, H),
+		torch.nn.ReLU(),
+		torch.nn.ReLU(),
+		torch.nn.ReLU(),
+		torch.nn.Linear(H, 1),
+	)
+model.load_state_dict(torch.load('townsend.pt'))
+
+model.train()
+
+# Test model
+model.eval()
+zt = np.zeros(np.shape(xx))
+for xi in range(density):
+	for yi in range(density):
+		zt[xi,yi] = model(torch.tensor([[xx[xi,yi], yy[xi,yi]]]).type(dtype))[0,0].item()
+min_si = np.unravel_index(np.argmin(zt, axis=None), zt.shape)
+# ax2 = fig.add_subplot(122, projection='3d')
+# ax2.plot_surface(xx,yy,zt, rstride=1, cstride=1, cmap=cm.coolwarm, linewidth=0, antialiased=False)
+# ax2.view_init(azim=0, elev=90)
+# plt.xlabel('x')
+# plt.ylabel('y')
+# plt.tight_layout()
+# ax2.set_zticks([])
+model.train()
 
 ## Controller
-n_epochs = 50
+n_epochs = 40
 loss_fn = torch.nn.MSELoss(reduction='sum')
-x0 = -1.8
-inp = Variable(torch.tensor([[x0+0.0]]).type(dtype), requires_grad=True)
+inp = Variable(torch.tensor([[x0+0.0, y0+0.0]]).type(dtype), requires_grad=True)
 # gradient_mask = torch.zeros(1,1)
 # gradient_mask[0,0] = 1.0
 # inp.register_hook(lambda grad: grad.mul_(gradient_mask))
-optimizer = torch.optim.SGD([inp], lr=.2)
+optimizer = torch.optim.Adam([inp], lr=.09)
 opt_steps_x = []
 opt_steps_y = []
+opt_steps_z = []
 for t in range(n_epochs):
 	y0 = model(inp)
 	loss = loss_fn(y0, torch.tensor([[y0.item()-0.1]]))
@@ -176,13 +200,19 @@ for t in range(n_epochs):
 	loss.backward()
 	optimizer.step()
 	opt_steps_x.append(inp.data[0,0]+0.0)
-	opt_steps_y.append(f(inp.data[0,0]+0.0))
+	opt_steps_y.append(inp.data[0,1]+0.0)
+	opt_steps_z.append(1.0)
+	# opt_steps_z.append(f(inp.data[0,0]+0.0, inp.data[0,1]+0.0))
 
-plt.plot(opt_steps_x, opt_steps_y, 'r+', label='Steps')
-plt.plot(opt_steps_x[np.argmin(opt_steps_y)], min(opt_steps_y), 'g*', label='Final')
+ax1.plot(opt_steps_x, opt_steps_y, opt_steps_z, 'k+', label='Steps', zorder=1e3)
+# ax1.plot([opt_steps_x[-1]], [opt_steps_y[-1]], [opt_steps_z[-1]], 'r+', label='Steps', zorder=1e3)
+# ax1.plot([xm],[ym],[1], 'g*', label='True Minimum', zorder=1e4, markersize=12)
+ax1.plot([xx[min_si]],[yy[min_si]],[1], 'g*', label='Model Minimum', zorder=1e4, markersize=12)
 
-plt.xlabel('x')
-plt.ylabel('f(x)')
-plt.legend(loc='upper center')
-plt.tight_layout()
+# ax2.plot(opt_steps_x, opt_steps_y, opt_steps_z, 'k+', label='Steps', zorder=1e3)
+# # ax2.plot([opt_steps_x[-1]], [opt_steps_y[-1]], [opt_steps_z[-1]], 'r+', label='Steps', zorder=1e3)
+# ax2.plot([xm],[ym],[1], 'g*', label='True', zorder=1e4)
+# ax2.plot([xx[min_si]],[yy[min_si]],[1], 'm*', label='Model Minimum', zorder=1e4)
+
+leg = ax1.legend(bbox_to_anchor=[0.5, 0.12], loc='lower center', ncol=3)
 plt.show()
