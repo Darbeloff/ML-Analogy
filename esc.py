@@ -71,7 +71,7 @@ min_i = np.argmax(y[:,1])
 ax1.plot([x[min_i,0]],[x[min_i,1]],[y[min_i,1]],'g*',label='True Extremum',zorder=1e3)
 plt.xlabel('Input Power')
 plt.ylabel('Speed')
-plt.title('Efficiency')
+# plt.title('Efficiency')
 ax1.view_init(azim=0, elev=90)
 
 ax2 = fig.add_subplot(1,2,2, projection='3d')
@@ -80,7 +80,7 @@ min_i = np.argmax(y[:,1])
 ax2.plot([x[min_i,0]],[x[min_i,1]],[y[min_i,1]],'g*',label='True Extremum',zorder=1e3)
 plt.xlabel('Input Power')
 plt.ylabel('Speed')
-plt.title('Next Speed')
+# plt.title('Next Speed')
 ax2.view_init(azim=0, elev=90)
 
 # xs = np.linspace(0,1,200)
@@ -229,7 +229,7 @@ if DEBUG:
 	ax2.plot([p_in_vec[-1]], [spd_vec[-1]], [1], 'k+', zorder=1e3)
 
 ## Controller
-n_epochs = 300
+n_epochs = 70
 loss_fn = torch.nn.MSELoss(reduction='sum')
 inp = Variable(torch.tensor([[p_in_vec[-1]+0.0, spd_vec[-1]+0.0]]).type(dtype), requires_grad=True)
 gradient_mask = torch.zeros(1,2)
@@ -264,12 +264,18 @@ for t in range(n_epochs):
 
 ax1.plot(p_in_vec, spd_vec, np.ones(np.size(p_in_vec)), 'k+', zorder=1e3, label='Steps')
 ax2.plot(p_in_vec, spd_vec, np.ones(np.size(p_in_vec)), 'k+', zorder=1e3, label='Steps')
-# for loc, spine in ax.spines.items():
-#     # use ax.spines.items() in Python 3
-#     spine.set_linewidth(0)
-# ax.set_xticks([])
-# ax.set_yticks([])
-# ax.set_zticks([])
+
+ax1.set_xlim([0.6,1])
+ax1.set_ylim([0.5,1])
+ax2.set_xlim([0.6,1])
+ax2.set_ylim([0.5,1])
+
+ax1.set_xticks([])
+ax1.set_yticks([])
+ax1.set_zticks([])
+ax2.set_xticks([])
+ax2.set_yticks([])
+ax2.set_zticks([])
 plt.tight_layout()
 plt.legend(loc='lower center', ncol=2)
 plt.show()
