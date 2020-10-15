@@ -66,7 +66,7 @@ for t in range(len(time)-M+1):                # Real time
 		# u_svec = []
 		# Du_svec = []
 		
-		u_guess = u[t+i-1]
+		u_guess = 3 if t==0 else u[t+i-1]
 		x_guess = x[t+i-1]
 		for j in range(E):     # Training u for that time step
 			Du_ij = Du(u_guess, rho, x_guess, ref(time[t+i-1]))
