@@ -109,17 +109,17 @@ if __name__ == '__main__':
 
 	Fs = k*x[:,0][:,None]**3
 	Fd = b*x[:,1][:,None]**3
-	xd = torch.cat((x[:,1], 1/m*(u-Fd-Fs)), 1)
-	eta = torch.cat((Fs, Fd), 1)
-	etad = torch.cat((3*k*x[:,0][:,None]**2, 3*b*x[:,1][:,None]**2), 1)
-	xs = torch.cat((x, eta), 1)
-	xsd = torch.cat((xd, etad), 1)
-	breakpoint()
-	tilde_f = torch.nn.Linear(3, 2)
-	tilde_g = torch.nn.Linear(5, 4)
+	eta = torch.cat((Fs, Fd, x[:,0][:,None]**2, x[:,1][:,None]**2), 1)
+	etad = torch.cat((3*k*x[:,0][:,None]**2, 3*b*x[:,1][:,None]**2, 2*x[:,0][:,None], 2*x[:,1][:,None]), 1)
+	xi = torch.cat((x, eta), 1)
+	xdd = 1/m*(u-Fd-Fs)
+	xid = torch.cat((x[:,1][:,None], xdd, etad), 1)
 
-	tilde_f = train_model(tilde_f, torch.cat((x, u), 1), torch.cat((x[:,1][:,None], xdd), 1))
+	tilde_f = torch.nn.Linear(3, 2)
+	tilde_g = torch.nn.Linear(7, 6)
+
+	tilde_f = train_model(tilde_f, torch.cat((x, u), 1), torch.cat((x[:,0][:,None], xdd), 1))
 	torch.save(tilde_f.state_dict(), 'tilde_f.pt')
 
-	tilde_g = train_model(tilde_g, torch.cat((xs, u), 1), xsd)
+	tilde_g = train_model(tilde_g, torch.cat((xi, u), 1), xid)
 	torch.save(tilde_g.state_dict(), 'tilde_g.pt')
