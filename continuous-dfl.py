@@ -1,5 +1,5 @@
 import numpy as np
-import copy, time
+import copy
 
 import torch
 import torch.optim as optim
@@ -99,10 +99,10 @@ def train_model(model, x, y):
 
 if __name__ == '__main__':
 	torch.manual_seed(2)
-	device = 'cpu'#'cuda' if torch.cuda.is_available() else 'cpu'
+	device = 'cuda' if torch.cuda.is_available() else 'cpu'
 	dtype = torch.FloatTensor
 
-	k, b, m, dt = 1, 1, 1, 0.01
+	k, b, m = 1, 1, 1
 	N = 10000
 
 	x = torch.rand(N, 2)
@@ -111,32 +111,17 @@ if __name__ == '__main__':
 	Fs = k*x[:,0][:,None]**3
 	Fd = b*x[:,1][:,None]**3
 
-	# Continuous-Time state-space matrices
-	A_x = torch.tensor([[0,1],[0,0]])
-	A_eta = torch.tensor([[0,0],[-1/m,-1/m]])
-	B_x = torch.tensor([[0],[1/m]])
-
-	# Convert state-space matrices to discrete-time
-	A_x = dt*A_x+torch.tensor([[1,0],[0,1]])
-	A_eta = dt*A_eta
-	B_x = dt*B_x
-
+	xd = torch.cat((x[:,1][:,None], 1/m*(u-Fd-Fs)), 1)
 	eta = torch.cat((Fs, Fd), 1)
-	x_tp1 = torch.transpose(
-		   torch.matmul(A_x, torch.transpose(x,0,1))
-		 + torch.matmul(A_eta, torch.transpose(eta,0,1))
-		 + torch.matmul(B_x, torch.transpose(u,0,1))
-		,0,1)
 	etad = torch.cat((3*k*x[:,0][:,None]**2, 3*b*x[:,1][:,None]**2), 1)
-	eta_tp1 = dt*etad+eta
 	xs = torch.cat((x, eta), 1)
-	xs_tp1 = torch.cat((x_tp1, eta_tp1), 1)
+	xsd = torch.cat((xd, etad), 1)
 
-	tilde_f = torch.nn.Linear(3, 2).to(device)
-	tilde_g = torch.nn.Linear(5, 4).to(device)
+	tilde_f = torch.nn.Linear(3, 2)
+	tilde_g = torch.nn.Linear(5, 4)
 
-	tilde_f = train_model(tilde_f, torch.cat((x, u), 1), x_tp1)
+	tilde_f = train_model(tilde_f, torch.cat((x, u), 1), xd)
 	torch.save(tilde_f.state_dict(), 'tilde_f.pt')
 
-	tilde_g = train_model(tilde_g, torch.cat((xs, u), 1), xs_tp1)
+	tilde_g = train_model(tilde_g, torch.cat((xs, u), 1), xsd)
 	torch.save(tilde_g.state_dict(), 'tilde_g.pt')

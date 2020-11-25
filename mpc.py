@@ -102,14 +102,11 @@ if __name__ == '__main__':
 	device = 'cpu'#'cuda' if torch.cuda.is_available() else 'cpu'
 	dtype = torch.FloatTensor
 
-	k, b, m, dt = 1, 1, 1, 0.01
+	k, b, m, dt = 1, 1, 1, 0.1
 	N = 10000
 
-	x = torch.rand(N, 2)
-	u = torch.rand(N, 1)
-
-	Fs = k*x[:,0][:,None]**3
-	Fd = b*x[:,1][:,None]**3
+	x = torch.rand(N, 2).type(dtype)
+	u = torch.rand(N, 1).type(dtype)
 
 	# Continuous-Time state-space matrices
 	A_x = torch.tensor([[0,1],[0,0]])
@@ -121,22 +118,95 @@ if __name__ == '__main__':
 	A_eta = dt*A_eta
 	B_x = dt*B_x
 
-	eta = torch.cat((Fs, Fd), 1)
-	x_tp1 = torch.transpose(
-		   torch.matmul(A_x, torch.transpose(x,0,1))
-		 + torch.matmul(A_eta, torch.transpose(eta,0,1))
-		 + torch.matmul(B_x, torch.transpose(u,0,1))
-		,0,1)
-	etad = torch.cat((3*k*x[:,0][:,None]**2, 3*b*x[:,1][:,None]**2), 1)
-	eta_tp1 = dt*etad+eta
-	xs = torch.cat((x, eta), 1)
-	xs_tp1 = torch.cat((x_tp1, eta_tp1), 1)
+	# Define state transition function
+	def f(x,u):
+		Fs = k*x[:,0][:,None]**3
+		Fd = b*x[:,1][:,None]**3
+		eta = torch.cat((Fs, Fd), 1)
+		x_tp1 = torch.transpose(
+			   torch.matmul(A_x, torch.transpose(x,0,1))
+			 + torch.matmul(A_eta, torch.transpose(eta,0,1))
+			 + torch.matmul(B_x, torch.transpose(u,0,1))
+			,0,1)
+		etad = torch.cat((3*k*x[:,0][:,None]**2, 3*b*x[:,1][:,None]**2), 1)
+		eta_tp1 = dt*etad+eta
+		xs = torch.cat((x, eta), 1)
+		xs_tp1 = torch.cat((x_tp1, eta_tp1), 1)
+		return x_tp1, xs_tp1, xs
 
+	# Initialize NN models
 	tilde_f = torch.nn.Linear(3, 2).to(device)
 	tilde_g = torch.nn.Linear(5, 4).to(device)
 
-	tilde_f = train_model(tilde_f, torch.cat((x, u), 1), x_tp1)
-	torch.save(tilde_f.state_dict(), 'tilde_f.pt')
+	# Generate models
+	# x_tp1, xs_tp1, xs = f(x,u)
+	# tilde_f = train_model(tilde_f, torch.cat((x, u), 1), x_tp1)
+	# torch.save(tilde_f.state_dict(), 'tilde_f.pt')
+	# tilde_g = train_model(tilde_g, torch.cat((xs, u), 1), xs_tp1)
+	# torch.save(tilde_g.state_dict(), 'tilde_g.pt')
 
-	tilde_g = train_model(tilde_g, torch.cat((xs, u), 1), xs_tp1)
-	torch.save(tilde_g.state_dict(), 'tilde_g.pt')
+	# Load models
+	tilde_f.load_state_dict(torch.load('tilde_f.pt'))
+	tilde_g.load_state_dict(torch.load('tilde_g.pt'))
+
+	# Simulate model system
+	# x_vec = [0]
+	# x_sim = [0]
+	# x_t = torch.tensor([[0,0]]).type(dtype)
+	# T = 100
+	# for t in range(T):
+	# 	u = torch.tensor([[1]]).type(dtype)
+	# 	Fs = k*x_t[0,0].item()**3
+	# 	Fd = b*x_t[0,1].item()**3
+	# 	eta_t = torch.tensor([[Fs, Fd]])
+	# 	xs_t = tilde_g(torch.cat((x_t, eta_t, u), 1).type(dtype))
+	# 	# xs_t = tilde_f(torch.cat((x_t, u), 1).type(dtype))
+	# 	x_t, _ , _ = f(x_t, u)
+	# 	x_vec.append(x_t[0,0].item())
+	# 	x_sim.append(xs_t[0,0].item())
+	# plt.figure()
+	# plt.plot(range(T+1), x_vec, label='x')
+	# plt.plot(range(T+1), x_sim, '*', label='x_sim')
+	# plt.show()
+
+	# Controller
+	x_vec = [0]
+	u_vec = []
+	r_vec = []
+	x_t = torch.tensor([[0,0]]).type(dtype)
+	u_t = Variable(torch.tensor([[1]]).type(dtype), requires_grad=True)
+	T = 500
+	ref = lambda t : torch.tensor([[1,0]]).type(dtype)
+	Q = torch.tensor([[1,0],[0,1]]).type(dtype)
+	R = torch.tensor([[0]]).type(dtype)
+	loss_fn = lambda x,r,u : (torch.matmul(r-x,torch.matmul(Q,torch.transpose(r-x,0,1))) + torch.matmul(u,torch.matmul(R,torch.transpose(u,0,1))))[0,0]
+	N = 20
+	rho = 0.05
+	optimizer = torch.optim.Adam([u_t], lr=rho)
+	for t in range(T):
+		J = torch.tensor(0).type(dtype)
+		# u_t = Variable(torch.tensor([[0]]).type(dtype), requires_grad=True)
+		x_tpi = [x_t]
+		for i in range(1,N+1):
+			Fs = k*x_tpi[i-1][0,0].item()**3
+			Fd = b*x_tpi[i-1][0,1].item()**3
+			eta_tpim1 = torch.tensor([[Fs, Fd]]).type(dtype)
+			x_tpi.append(tilde_g(torch.cat((x_tpi[i-1], eta_tpim1, u_t), 1))[:,:2])
+			J+= loss_fn(x_tpi[-1], ref(t), u_t)
+		optimizer.zero_grad()
+		J.backward()
+		optimizer.step()
+		# breakpoint()
+		u_vec.append(u_t[0,0].item())
+		x_t, _ , _ = f(x_t, u_t)
+		x_t = x_t.detach().clone()
+		x_vec.append(x_t[0,0].item())
+		r_vec.append(ref(t)[0,0].item())
+
+	plt.figure()
+	plt.plot(range(T+1), x_vec, label='x')
+	plt.plot(range(T), u_vec, label='u')
+	plt.plot(range(T), r_vec, label='r')
+	plt.legend()
+	plt.xlabel('Time')
+	plt.show()
