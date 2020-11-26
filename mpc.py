@@ -192,6 +192,7 @@ if __name__ == '__main__':
 			Fd = b*x_tpi[i-1][0,1].item()**3
 			eta_tpim1 = torch.tensor([[Fs, Fd]]).type(dtype)
 			x_tpi.append(tilde_g(torch.cat((x_tpi[i-1], eta_tpim1, u_t), 1))[:,:2])
+			# x_tpi.append(tilde_f(torch.cat((x_tpi[i-1], u_t), 1))[:,:2])
 			J+= loss_fn(x_tpi[-1], ref(t), u_t)
 		optimizer.zero_grad()
 		J.backward()
