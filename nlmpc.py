@@ -130,22 +130,15 @@ if __name__ == '__main__':
 		if eta is None:
 			eta = eta_fn(x,u)
 		return torch.transpose(
-			   torch.matmul(A_x,   torch.transpose(x,  0,1))
+			   torch.matmul(A_x, torch.transpose(x,0,1))
 			 + torch.matmul(A_eta, torch.transpose(eta,0,1))
-			 + torch.matmul(B_x,   torch.transpose(u,  0,1))
+			 + torch.matmul(B_x, torch.transpose(u,0,1))
 			,0,1)
 
 	def h(x,u,eta):
 		return torch.cat((3*k*x[:,0][:,None]**2, 3*b*x[:,1][:,None]**2), 1)
 
 	# Initialize NN models
-	def model(D_in, H, D_out):
-		return torch.nn.Sequential(
-				torch.nn.Linear(D_in, H),
-				torch.nn.ReLU(),
-				torch.nn.Linear(H, D_out),
-			).to(device)
-
 	tilde_f = torch.nn.Linear(3,2).to(device)	# (x_t, u_t) -> (x_tp1)
 	tilde_g = torch.nn.Linear(5,2).to(device)	# (x_t, eta_t, u_t) -> (x_tp1)
 	tilde_h = torch.nn.Linear(5,2).to(device)	# (x_t, eta_t, u_t) -> (eta_tp1)
@@ -201,10 +194,9 @@ if __name__ == '__main__':
 	for t in range(T):
 		J = torch.tensor(0).type(dtype)
 		x_tpi = [x_t]
-		eta_tpi = [eta_fn(x_t, u_t)]
 		for i in range(1,N+1):
-			eta_tpi.append(tilde_h(torch.cat((x_tpi[i-1], eta_tpi[-1], u_t), 1)))
-			x_tpi.append(tilde_g(torch.cat((x_tpi[i-1], eta_tpi[-1], u_t), 1)))
+			eta_tpim1 = eta_fn(x_tpi[i-1], u_t)
+			x_tpi.append(tilde_g(torch.cat((x_tpi[i-1], eta_tpim1, u_t), 1)))
 			# x_tpi.append(tilde_f(torch.cat((x_tpi[i-1], u_t), 1)))
 			J+= loss_fn(x_tpi[-1], ref(t), u_t)
 		optimizer.zero_grad()
