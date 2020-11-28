@@ -148,16 +148,16 @@ if __name__ == '__main__':
 	# x_tp1 = f(x,u,eta)
 	# eta_tp1 = h(x,u,eta)
 	# tilde_f = train_model(tilde_f, torch.cat((x, u), 1), x_tp1)
-	# torch.save(tilde_f.state_dict(), 'tilde_f.pt')
+	# torch.save(tilde_f.state_dict(), 'nlmpc_models/tilde_f.pt')
 	# tilde_g = train_model(tilde_g, torch.cat((x, eta, u), 1), x_tp1)
-	# torch.save(tilde_g.state_dict(), 'tilde_g.pt')
+	# torch.save(tilde_g.state_dict(), 'nlmpc_models/tilde_g.pt')
 	# tilde_h = train_model(tilde_h, torch.cat((x, eta, u), 1), eta_tp1)
-	# torch.save(tilde_h.state_dict(), 'tilde_h.pt')
+	# torch.save(tilde_h.state_dict(), 'nlmpc_models/tilde_h.pt')
 
 	# Load models
-	tilde_f.load_state_dict(torch.load('tilde_f.pt'))
-	tilde_g.load_state_dict(torch.load('tilde_g.pt'))
-	tilde_h.load_state_dict(torch.load('tilde_h.pt'))
+	tilde_f.load_state_dict(torch.load('nlmpc_models/tilde_f.pt'))
+	tilde_g.load_state_dict(torch.load('nlmpc_models/tilde_g.pt'))
+	tilde_h.load_state_dict(torch.load('nlmpc_models/tilde_h.pt'))
 
 	# Simulate model system
 	# x_vec = [0]
@@ -196,7 +196,8 @@ if __name__ == '__main__':
 		x_tpi = [x_t]
 		for i in range(1,N+1):
 			eta_tpim1 = eta_fn(x_tpi[i-1], u_t)
-			x_tpi.append(tilde_g(torch.cat((x_tpi[i-1], eta_tpim1, u_t), 1)))
+			x_tpi.append(f(x_tpi[i-1], u_t, eta_tpim1))
+			# x_tpi.append(tilde_g(torch.cat((x_tpi[i-1], eta_tpim1, u_t), 1)))
 			# x_tpi.append(tilde_f(torch.cat((x_tpi[i-1], u_t), 1)))
 			J+= loss_fn(x_tpi[-1], ref(t), u_t)
 		optimizer.zero_grad()
