@@ -99,6 +99,29 @@ def train_model(model, x, y, title=None):
 	model.eval()
 	return model
 
+def lazyOpt(fn, lwrBnd, uprBnd, disc, intMask):
+	n_vars = len(disc)
+
+	step = []
+	for v in range(n_vars):
+		step.append((uprBnd[v]-lwrBnd[v])/disc[v])
+	step = np.asarray(step)
+
+	J = np.zeros(disc)
+	for i in range(np.prod(disc)):
+		idx = np.unravel_index(i,disc)
+		inp = np.asarray(lwrBnd).copy()
+		inp+= idx*step
+		inp = inp.tolist()
+		for v in range(len(inp)):
+			if intMask[v]:
+				inp[v] = int(inp[v])
+		J[idx] = controller(inp)
+
+	mindx = np.argmin(J)
+	breakpoint()
+
+
 if __name__ == '__main__':
 	torch.manual_seed(3) #5
 	device = 'cpu'#'cuda' if torch.cuda.is_available() else 'cpu'
@@ -232,47 +255,48 @@ if __name__ == '__main__':
 	# plt.show()
 
 	# Controller
-	x_vec = [0]
-	u_vec = []
-	r_vec = []
-	x_t = torch.tensor([[0,0]]).type(dtype)
-	u_t = Variable(torch.tensor([[1]]).type(dtype), requires_grad=True)
-	ref = lambda t : torch.tensor([[1,0]]).type(dtype)
-	Q = torch.tensor([[1,0],[0,1]]).type(dtype)
-	R = torch.tensor([[0]]).type(dtype)
-	loss_fn = lambda x,r,u : (torch.matmul(r-x,torch.matmul(Q,torch.transpose(r-x,0,1))) + torch.matmul(u,torch.matmul(R,torch.transpose(u,0,1))))[0,0]
-	N = 20
-	rho = 0.1
-	optimizer = torch.optim.Adam([u_t], lr=rho)
-	for t in range(T):
-		J = torch.tensor(0).type(dtype)
-		x_tpi = [x_t]
-		eta_tpi = [eta_fn(x_t, u_t)]
-		for i in range(1,N+1):
-			# eta_tpi.append(tilde_h(torch.cat((x_tpi[-1], eta_tpi[-1], u_t), 1)))
-			x_tpi.append(f_exact(x_tpi[i-1], u_t))
-			# x_tpi.append(f(x_tpi[-1], eta_tpi[-1], u_t))
-			# x_tpi.append(tilde_g(torch.cat((x_tpi[-1], eta_tpi[-1], u_t), 1)))
-			# x_tpi.append(tilde_f(torch.cat((x_tpi[-1], u_t), 1)))
-			# breakpoint()
-			J+= loss_fn(x_tpi[-1], ref(t), u_t)
-		# if t>150:
-		# 	breakpoint()
-		optimizer.zero_grad()
-		J.backward()
-		optimizer.step()
-		# if t>150:
-		# 	breakpoint()
-		u_vec.append(u_t[0,0].item())
-		x_t = f_exact(x_t, u_t)
-		x_t = x_t.detach().clone()
-		x_vec.append(x_t[0,0].item())
-		r_vec.append(ref(t)[0,0].item())
+	def controller(inp):
+		Q_x22, N, rho = inp
+		x_vec = []
+		u_vec = []
+		r_vec = []
+		x_t = torch.tensor([[0,0]]).type(dtype)
+		u_t = Variable(torch.tensor([[1]]).type(dtype), requires_grad=True)
+		ref = lambda t : torch.tensor([[1,0]]).type(dtype)
+		Q = torch.tensor([[1,0],[0,Q_x22]]).type(dtype)
+		R = torch.tensor([[0]]).type(dtype)
+		loss_fn = lambda x,r,u : (torch.matmul(r-x,torch.matmul(Q,torch.transpose(r-x,0,1))) + torch.matmul(u,torch.matmul(R,torch.transpose(u,0,1))))[0,0]
+		# N = 15
+		# rho = 0.3
+		optimizer = torch.optim.Adam([u_t], lr=rho)
+		total_Cost = 0
+		for t in range(T):
+			J = torch.tensor(0).type(dtype)
+			x_tpi = [x_t]
+			eta_tpi = [eta_fn(x_t, u_t)]
+			for i in range(1,N+1):
+				eta_tpi.append(tilde_h(torch.cat((x_tpi[-1], eta_tpi[-1], u_t), 1)))
+				x_tpi.append(f(x_tpi[-1], eta_tpi[-2], u_t))
+				# x_tpi.append(f_exact(x_tpi[-1], u_t))
+				J+= loss_fn(x_tpi[-1], ref(t), u_t)
+			optimizer.zero_grad()
+			J.backward()
+			optimizer.step()
+			u_vec.append(u_t[0,0].item())
+			x_t = f_exact(x_t, u_t)
+			x_t = x_t.detach().clone()
+			x_vec.append(x_t[0,0].item())
+			r_vec.append(ref(t)[0,0].item())
+			total_Cost+= (x_vec[-1]-r_vec[-1])**2
 
-	plt.figure()
-	plt.plot(range(T+1), x_vec, label='x')
-	plt.plot(range(T), u_vec, label='u')
-	plt.plot(range(T), r_vec, label='r')
-	plt.legend()
-	plt.xlabel('Time')
-	plt.show()
+		# plt.figure()
+		# plt.plot(range(T), x_vec, label='x')
+		# plt.plot(range(T), u_vec, label='u')
+		# plt.plot(range(T), r_vec, label='r')
+		# plt.legend()
+		# plt.xlabel('Time')
+		# plt.show()
+
+		return total_Cost
+
+	lazyOpt(controller, (0,1,0.001), (1, 20, 1), (2,2,2), (False, True, False))
