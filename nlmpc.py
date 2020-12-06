@@ -178,7 +178,7 @@ if __name__ == '__main__':
 	# plt.show()
 
 	# Controller
-	x_vec = [0]
+	x_vec = []
 	u_vec = []
 	r_vec = []
 	x_t = torch.tensor([[0,0]]).type(dtype)
@@ -210,7 +210,7 @@ if __name__ == '__main__':
 		r_vec.append(ref(t)[0,0].item())
 
 	plt.figure()
-	plt.plot(range(T+1), x_vec, label='x')
+	plt.plot(range(T), x_vec, label='x')
 	plt.plot(range(T), u_vec, label='u')
 	plt.plot(range(T), r_vec, label='r')
 	plt.legend()

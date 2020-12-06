@@ -168,39 +168,39 @@ if __name__ == '__main__':
 		return dt*torch.cat((3*k*x[:,0][:,None]**2, 3*b*x[:,1][:,None]**2), 1)+eta
 
 	# Initialize NN model
-	H = 70
+	H = 30
 	# tilde_h = torch.nn.Sequential(
 	# 			torch.nn.Linear(5, H),
 	# 			torch.nn.ReLU(),
 	# 			torch.nn.ReLU(),
 	# 			torch.nn.Linear(H, 2),
-	# 		).to(device)	# (x_t, eta_t, u_t) -> (eta_tp1)
-	tilde_h = torch.nn.Linear(5, 2, bias=False)
+	# 		).to(device)
+	tilde_h = torch.nn.Linear(5, 2, bias=False)	# (x_t, eta_t, u_t) -> (eta_tp1)
 
 	# Generate model
 	eta = eta_fn(x,u)
 	x_tp1 = f(x,eta,u)
 	eta_tp1 = eta_fn(x_tp1,u)
 	# eta_tp1 = h(x,eta,u)
-	tilde_h = train_model(tilde_h, torch.cat((x, eta, u), 1), eta_tp1)
-	torch.save(tilde_h.state_dict(), 'tilde_h.pt')
+	# tilde_h = train_model(tilde_h, torch.cat((x, eta, u), 1), eta_tp1)
+	# torch.save(tilde_h.state_dict(), 'tilde_h.pt')
 
 	# Load model
-	# tilde_h.load_state_dict(torch.load('tilde_h.pt'))
+	tilde_h.load_state_dict(torch.load('tilde_h.pt'))
 
 	# Compare H
-	etaobxi = torch.zeros((2,5))
-	xixi = torch.zeros((5,5))
-	for i in range(M):
-		etao = eta_tp1[i,:][:,None]
-		xi = torch.cat((x[i,:][:,None], eta[i,:][:,None], u[i][:,None]), 0)
-		etaobxi+= torch.matmul(etao, torch.transpose(xi,0,1))
-		xixi+= torch.matmul(xi, torch.transpose(xi,0,1))
-	etaobxi/= M
-	xixi/= M
-	H = torch.matmul(etaobxi, torch.inverse(xixi))
-	print('H=',H)
-	print('~H=',[h for h in tilde_h.parameters()])
+	# etaobxi = torch.zeros((2,5))
+	# xixi = torch.zeros((5,5))
+	# for i in range(M):
+	# 	etao = eta_tp1[i,:][:,None]
+	# 	xi = torch.cat((x[i,:][:,None], eta[i,:][:,None], u[i][:,None]), 0)
+	# 	# breakpoint()
+	# 	etaobxi+= torch.matmul(etao, torch.transpose(xi,0,1))
+	# 	xixi+= torch.matmul(xi, torch.transpose(xi,0,1))
+	# etaobxi/= M
+	# xixi/= M
+	# H = torch.matmul(etaobxi, torch.inverse(xixi))
+	# print('H=',H)
 
 	## Simulate model system
 	'''
@@ -274,7 +274,8 @@ if __name__ == '__main__':
 		x_t = torch.tensor([[0,0]]).type(dtype)
 		u_t = Variable(torch.tensor([[0.5]]).type(dtype), requires_grad=True)
 		ref = lambda t : torch.tensor([[0.5,0]]).type(dtype)
-		Q = torch.tensor([[1,0],[0,1]]).type(dtype)
+		# Q = torch.eye(2).type(dtype)
+		Q = torch.eye(4).type(dtype)
 		R = torch.tensor([[0]]).type(dtype)
 		loss_fn = lambda x,r,u : (torch.matmul(r-x,torch.matmul(Q,torch.transpose(r-x,0,1))) + torch.matmul(u,torch.matmul(R,torch.transpose(u,0,1))))[0,0]
 		N = 30
@@ -289,7 +290,9 @@ if __name__ == '__main__':
 				eta_tpi.append(tilde_h(torch.cat((x_tpi[-1], eta_tpi[-1], u_t), 1)))
 				x_tpi.append(f(x_tpi[-1], eta_tpi[-2], u_t))
 				# x_tpi.append(f_exact(x_tpi[-1], u_t))
-				J+= loss_fn(x_tpi[-1], ref(t), u_t)
+				# J+= loss_fn(x_tpi[-1], ref(t), u_t)
+				J+= loss_fn(torch.cat((x_tpi[-1], eta_fn(x_tpi[-1], u_t)),1),
+				            torch.cat((ref(t), eta_fn(ref(t),u_t)),1), u_t)
 			optimizer.zero_grad()
 			J.backward()
 			optimizer.step()
@@ -298,7 +301,9 @@ if __name__ == '__main__':
 			x_t = x_t.detach().clone()
 			x_vec.append(x_t[0,0].item())
 			r_vec.append(ref(t)[0,0].item())
-			total_Cost+= (x_vec[-1]-r_vec[-1])**2
+			# if t>200:
+			# 	breakpoint()
+			total_Cost+= abs((x_vec[-1]-r_vec[-1]))
 
 		plt.figure()
 		plt.plot(range(T), x_vec, label='x')

@@ -167,15 +167,19 @@ if __name__ == '__main__':
 	def h(x,eta,u):
 		return dt*torch.cat((3*k*x[:,0][:,None]**2, 3*b*x[:,1][:,None]**2), 1)+eta
 
-	# Initialize NN model
-	H = 70
-	# tilde_h = torch.nn.Sequential(
-	# 			torch.nn.Linear(5, H),
-	# 			torch.nn.ReLU(),
-	# 			torch.nn.ReLU(),
-	# 			torch.nn.Linear(H, 2),
-	# 		).to(device)	# (x_t, eta_t, u_t) -> (eta_tp1)
-	tilde_h = torch.nn.Linear(5, 2, bias=False)
+	# Initialize NN models
+	def model(D_in, H, D_out):
+		return 
+		# return torch.nn.Linear(D_in, D_out, bias=False)
+	H = 30
+	tilde_h = torch.nn.Sequential(
+				# torch.nn.BatchNorm1d(num_features=D_in),
+				torch.nn.Linear(5, H),
+				torch.nn.ReLU(),
+				# torch.nn.ReLU(),
+				torch.nn.Linear(H, 2),
+			).to(device)	# (x_t, eta_t, u_t) -> (eta_tp1)
+	# tilde_h = torch.nn.Linear(5,2)
 
 	# Generate model
 	eta = eta_fn(x,u)
@@ -189,18 +193,18 @@ if __name__ == '__main__':
 	# tilde_h.load_state_dict(torch.load('tilde_h.pt'))
 
 	# Compare H
-	etaobxi = torch.zeros((2,5))
-	xixi = torch.zeros((5,5))
-	for i in range(M):
-		etao = eta_tp1[i,:][:,None]
-		xi = torch.cat((x[i,:][:,None], eta[i,:][:,None], u[i][:,None]), 0)
-		etaobxi+= torch.matmul(etao, torch.transpose(xi,0,1))
-		xixi+= torch.matmul(xi, torch.transpose(xi,0,1))
-	etaobxi/= M
-	xixi/= M
-	H = torch.matmul(etaobxi, torch.inverse(xixi))
-	print('H=',H)
-	print('~H=',[h for h in tilde_h.parameters()])
+	# etaobxi = torch.zeros((2,5))
+	# xixi = torch.zeros((5,5))
+	# for i in range(M):
+	# 	etao = eta_tp1[i,:][:,None]
+	# 	xi = torch.cat((x[i,:][:,None], eta[i,:][:,None], u[i][:,None]), 0)
+	# 	# breakpoint()
+	# 	etaobxi+= torch.matmul(etao, torch.transpose(xi,0,1))
+	# 	xixi+= torch.matmul(xi, torch.transpose(xi,0,1))
+	# etaobxi/= M
+	# xixi/= M
+	# H = torch.matmul(etaobxi, torch.inverse(xixi))
+	# print('H=',H)
 
 	## Simulate model system
 	'''
@@ -271,9 +275,9 @@ if __name__ == '__main__':
 		x_vec = []
 		u_vec = []
 		r_vec = []
-		x_t = torch.tensor([[0,0]]).type(dtype)
-		u_t = Variable(torch.tensor([[0.5]]).type(dtype), requires_grad=True)
-		ref = lambda t : torch.tensor([[0.5,0]]).type(dtype)
+		x_t = torch.tensor([[0.5,0.5]]).type(dtype)
+		u_t = Variable(torch.tensor([[0]]).type(dtype), requires_grad=True)
+		ref = lambda t : torch.tensor([[0,0]]).type(dtype)
 		Q = torch.tensor([[1,0],[0,1]]).type(dtype)
 		R = torch.tensor([[0]]).type(dtype)
 		loss_fn = lambda x,r,u : (torch.matmul(r-x,torch.matmul(Q,torch.transpose(r-x,0,1))) + torch.matmul(u,torch.matmul(R,torch.transpose(u,0,1))))[0,0]
