@@ -182,11 +182,11 @@ if __name__ == '__main__':
 	x_tp1 = f(x,eta,u)
 	eta_tp1 = eta_fn(x_tp1,u)
 	# eta_tp1 = h(x,eta,u)
-	tilde_h = train_model(tilde_h, torch.cat((x, eta, u), 1), eta_tp1)
-	torch.save(tilde_h.state_dict(), 'tilde_h.pt')
+	# tilde_h = train_model(tilde_h, torch.cat((x, eta, u), 1), eta_tp1)
+	# torch.save(tilde_h.state_dict(), 'tilde_h.pt')
 
 	# Load model
-	# tilde_h.load_state_dict(torch.load('tilde_h.pt'))
+	tilde_h.load_state_dict(torch.load('tilde_h.pt'))
 
 	# Compare H
 	etaobxi = torch.zeros((2,5))
@@ -277,7 +277,7 @@ if __name__ == '__main__':
 		Q = torch.tensor([[1,0],[0,1]]).type(dtype)
 		R = torch.tensor([[0]]).type(dtype)
 		loss_fn = lambda x,r,u : (torch.matmul(r-x,torch.matmul(Q,torch.transpose(r-x,0,1))) + torch.matmul(u,torch.matmul(R,torch.transpose(u,0,1))))[0,0]
-		N = 30
+		N = 20
 		rho = 0.1
 		optimizer = torch.optim.Adam([u_t], lr=rho)
 		total_Cost = 0
@@ -287,8 +287,8 @@ if __name__ == '__main__':
 			eta_tpi = [eta_fn(x_t, u_t)]
 			for i in range(1,N+1):
 				eta_tpi.append(tilde_h(torch.cat((x_tpi[-1], eta_tpi[-1], u_t), 1)))
-				x_tpi.append(f(x_tpi[-1], eta_tpi[-2], u_t))
-				# x_tpi.append(f_exact(x_tpi[-1], u_t))
+				# x_tpi.append(f(x_tpi[-1], eta_tpi[-2], u_t))
+				x_tpi.append(f_exact(x_tpi[-1], u_t))
 				J+= loss_fn(x_tpi[-1], ref(t), u_t)
 			optimizer.zero_grad()
 			J.backward()
@@ -299,6 +299,7 @@ if __name__ == '__main__':
 			x_vec.append(x_t[0,0].item())
 			r_vec.append(ref(t)[0,0].item())
 			total_Cost+= (x_vec[-1]-r_vec[-1])**2
+			# total_Cost+= abs(x_vec[-1]-r_vec[-1])
 
 		plt.figure()
 		plt.plot(range(T), x_vec, label='x')

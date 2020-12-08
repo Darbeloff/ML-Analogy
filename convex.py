@@ -132,7 +132,7 @@ if __name__ == '__main__':
 	device = 'cpu'#'cuda' if torch.cuda.is_available() else 'cpu'
 	dtype = torch.FloatTensor
 
-	k, b, m, dt, T = 1, 1, 1, 0.1, 400
+	k, b, m, dt, T = 1, 1, 1, 0.1, 200
 	M = 10000
 
 	x = (torch.rand(M, 2).type(dtype)-0.5)*2
@@ -189,18 +189,18 @@ if __name__ == '__main__':
 	tilde_h.load_state_dict(torch.load('tilde_h.pt'))
 
 	# Compare H
-	etaobxi = torch.zeros((2,5))
-	xixi = torch.zeros((5,5))
-	for i in range(M):
-		etao = eta_tp1[i,:][:,None]
-		xi = torch.cat((x[i,:][:,None], eta[i,:][:,None], u[i][:,None]), 0)
-		etaobxi+= torch.matmul(etao, torch.transpose(xi,0,1))
-		xixi+= torch.matmul(xi, torch.transpose(xi,0,1))
-	etaobxi/= M
-	xixi/= M
-	H = torch.matmul(etaobxi, torch.inverse(xixi))
-	print('H=',H)
-	print('~H=',[h for h in tilde_h.parameters()])
+	# etaobxi = torch.zeros((2,5))
+	# xixi = torch.zeros((5,5))
+	# for i in range(M):
+	# 	etao = eta_tp1[i,:][:,None]
+	# 	xi = torch.cat((x[i,:][:,None], eta[i,:][:,None], u[i][:,None]), 0)
+	# 	etaobxi+= torch.matmul(etao, torch.transpose(xi,0,1))
+	# 	xixi+= torch.matmul(xi, torch.transpose(xi,0,1))
+	# etaobxi/= M
+	# xixi/= M
+	# H = torch.matmul(etaobxi, torch.inverse(xixi))
+	# print('H=',H)
+	# print('~H=',[h for h in tilde_h.parameters()])
 
 	## Simulate model system
 	'''
@@ -272,15 +272,15 @@ if __name__ == '__main__':
 		u_vec = []
 		r_vec = []
 		x_t = torch.tensor([[0,0]]).type(dtype)
-		u_t = Variable(torch.tensor([[0.5]]).type(dtype), requires_grad=True)
+		u_t = Variable(torch.tensor([[0]]).type(dtype), requires_grad=True)
 		ref = lambda t : torch.tensor([[0.5,0]]).type(dtype)
 		Q = torch.tensor([[1,0],[0,1]]).type(dtype)
 		R = torch.tensor([[0]]).type(dtype)
 		loss_fn = lambda x,r,u : (torch.matmul(r-x,torch.matmul(Q,torch.transpose(r-x,0,1))) + torch.matmul(u,torch.matmul(R,torch.transpose(u,0,1))))[0,0]
-		u_poss = np.linspace(-0.5,0.5,10)
-		tt,uu = np.meshgrid(range(T), u_poss)
+		u_poss = np.linspace(-0.6,0.6,50)
+		tt,uu = np.meshgrid(range(T), u_poss, indexing='ij')
 		J_surf = np.zeros(np.shape(tt))
-		N = 2
+		N = 20
 		rho = 0.1
 		optimizer = torch.optim.Adam([u_t], lr=rho)
 		total_Cost = 0
@@ -293,10 +293,10 @@ if __name__ == '__main__':
 				eta_tpi = [eta_fn(x_t_this, u_this)]
 				for i in range(1,N+1):
 					eta_tpi.append(tilde_h(torch.cat((x_tpi[-1], eta_tpi[-1], u_this), 1)))
-					x_tpi.append(f(x_tpi[-1], eta_tpi[-2], u_this))
-					# x_tpi.append(f_exact(x_tpi[-1], u_this))
+					# x_tpi.append(f(x_tpi[-1], eta_tpi[-2], u_this))
+					x_tpi.append(f_exact(x_tpi[-1], u_this))
 					J+= loss_fn(x_tpi[-1], ref(t), u_this)
-				breakpoint()
+				# breakpoint()
 				J_surf[t,ui] = J.item()
 
 			J = torch.tensor(0).type(dtype)
@@ -304,8 +304,8 @@ if __name__ == '__main__':
 			eta_tpi = [eta_fn(x_t, u_t)]
 			for i in range(1,N+1):
 				eta_tpi.append(tilde_h(torch.cat((x_tpi[-1], eta_tpi[-1], u_t), 1)))
-				x_tpi.append(f(x_tpi[-1], eta_tpi[-2], u_t))
-				# x_tpi.append(f_exact(x_tpi[-1], u_t))
+				# x_tpi.append(f(x_tpi[-1], eta_tpi[-2], u_t))
+				x_tpi.append(f_exact(x_tpi[-1], u_t))
 				J+= loss_fn(x_tpi[-1], ref(t), u_t)
 			optimizer.zero_grad()
 			J.backward()
@@ -317,24 +317,28 @@ if __name__ == '__main__':
 			r_vec.append(ref(t)[0,0].item())
 			total_Cost+= (x_vec[-1]-r_vec[-1])**2
 
-			print(100*t/T)
+			# print(100*t/T)
 
-		plt.figure()
-		plt.plot(range(T), x_vec, label='x')
-		plt.plot(range(T), r_vec, label='r')
-		plt.plot(range(T), u_vec, label='u')
-		plt.legend()
-		plt.xlabel('Time')
-		plt.show()
+		# plt.figure()
+		# plt.plot(range(T), x_vec, label='x')
+		# plt.plot(range(T), r_vec, label='r')
+		# plt.plot(range(T), u_vec, label='u')
+		# plt.legend()
+		# plt.xlabel('Time')
+		# plt.show()
 
 		fig = plt.figure()
 		ax1 = fig.add_subplot(111, projection='3d')
-		ax1.plot_surface(tt,uu,J_surf, rstride=1, cstride=1, cmap=cm.coolwarm, linewidth=0, antialiased=False)
-		ax1.view_init(azim=0, elev=90)
-		plt.xlabel('t')
-		plt.ylabel('u')
+		ax1.plot_surface(tt,uu,np.log(J_surf), rstride=1, cstride=1, cmap=cm.coolwarm, linewidth=0, antialiased=False)
+		plt.plot(range(T), x_vec, label='x', zorder=10)
+		plt.plot(range(T), r_vec, label='r', zorder=11)
+		plt.plot(range(T), u_vec, label='u', zorder=12)
+		ax1.view_init(azim=-90, elev=90)
+		plt.legend(loc='lower center', ncol=3)
+		plt.xlabel('Time')
 		plt.tight_layout()
 		ax1.set_zticks([])
+		plt.show()
 
 		print(total_Cost)
 		return total_Cost
