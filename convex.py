@@ -340,9 +340,8 @@ if __name__ == '__main__':
 		ax1.set_zticks([])
 		plt.show()
 
-		print(total_Cost)
 		return total_Cost
 
-	controller()
+	print(controller())
 
 	# lazyOpt(controller, (0,8,0.001), (0,30,.004), (4,4,4), (False, True, False))
