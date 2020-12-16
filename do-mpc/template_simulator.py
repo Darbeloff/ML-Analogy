@@ -1,3 +1,7 @@
+import numpy as np
+from casadi import *
+import do_mpc
+
 def template_simulator(model):
     # Obtain an instance of the do-mpc simulator class
     # and initiate it with the model:

@@ -1,3 +1,7 @@
+import numpy as np
+from casadi import *
+import do_mpc
+
 def template_mpc(model):
 	# Obtain an instance of the do-mpc MPC class
 	# and initiate it with the model:
@@ -20,11 +24,13 @@ def template_mpc(model):
 	mpc.set_param(**setup_mpc)
 
 	# Configure objective function:
-	mterm = (_x['pos'] - 1)**2    # Setpoint tracking
-	lterm = (_x['pos'] - 1)**2    # Setpoint tracking
+	mterm = (model._x['pos'] - 1)**2    # Setpoint tracking
+	lterm = (model._x['pos'] - 1)**2    # Setpoint tracking
+	# mterm+= 0.1*model._x['dpos']**2    # Setpoint tracking
+	# lterm+= 0.1*model._x['dpos']**2    # Setpoint tracking
 
 	mpc.set_objective(mterm=mterm, lterm=lterm)
-	mpc.set_rterm(F=0.1, Q_dot = 1e-3) # Scaling for quad. cost.
+	mpc.set_rterm(force=0) # Scaling for quad. cost.
 
 	mpc.setup()
 

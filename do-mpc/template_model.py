@@ -1,3 +1,7 @@
+import numpy as np
+from casadi import *
+import do_mpc
+
 def template_model():
 	k, b, m = 1, 1, 1
 
@@ -10,13 +14,12 @@ def template_model():
 	pos = model.set_variable(var_type='_x', var_name='pos', shape=(1,1))
 	dpos = model.set_variable(var_type='_x', var_name='dpos', shape=(1,1))
 	u = model.set_variable(var_type='_u', var_name='force', shape=(1,1))
-	ddpos = model.set_variable('_z', 'ddpos')
+	Fs = k*pos**3
+	Fd = b*dpos**3
 
 	model.set_rhs('pos', dpos)
-	model.set_rhs('dpos', ddpos)
+	model.set_rhs('dpos', (u-Fs-Fd)/m)
 	
-	model.set_alg('dynamics', m*ddpos+b*dpos**3+k*pos**3-u)
-
 	# Setup model:
 	model.setup()
 

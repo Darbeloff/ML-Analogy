@@ -150,8 +150,10 @@ if __name__ == '__main__':
 
 	# Define state transition function
 	def eta_fn(x,u):
-		Fs = k*x[:,0][:,None]**3
-		Fd = b*x[:,1][:,None]**3
+		pos = x[:,0][:,None]
+		dpos = x[:,1][:,None]
+		Fs = k*pos*(pos-0.5)*(pos+0.5)
+		Fd = b*dpos*(dpos-0.5)*(dpos+0.5)
 		return torch.cat((Fs, Fd), 1)
 
 	def f_exact(x,u):
@@ -164,8 +166,8 @@ if __name__ == '__main__':
 			 + torch.matmul(B_x,   torch.transpose(u,  0,1))
 			,0,1)
 
-	def h(x,eta,u):
-		return dt*torch.cat((3*k*x[:,0][:,None]**2, 3*b*x[:,1][:,None]**2), 1)+eta
+	# def h(x,eta,u):
+	# 	return dt*torch.cat((3*k*x[:,0][:,None]**2, 3*b*x[:,1][:,None]**2), 1)+eta
 
 	# Initialize NN model
 	H = 70
@@ -271,14 +273,14 @@ if __name__ == '__main__':
 		x_vec = []
 		u_vec = []
 		r_vec = []
-		x_t = torch.tensor([[0,0]]).type(dtype)
-		u_t = Variable(torch.tensor([[0.5]]).type(dtype), requires_grad=True)
-		ref = lambda t : torch.tensor([[0.5,0]]).type(dtype)
+		x_t = torch.tensor([[0.5,0.5]]).type(dtype)
+		u_t = Variable(torch.tensor([[0]]).type(dtype), requires_grad=True)
+		ref = lambda t : torch.tensor([[0,0]]).type(dtype)
 		Q = torch.tensor([[1,0],[0,1]]).type(dtype)
 		R = torch.tensor([[0]]).type(dtype)
 		loss_fn = lambda x,r,u : (torch.matmul(r-x,torch.matmul(Q,torch.transpose(r-x,0,1))) + torch.matmul(u,torch.matmul(R,torch.transpose(u,0,1))))[0,0]
-		N = 20
-		rho = 0.1
+		N = 25
+		rho = 1
 		optimizer = torch.optim.Adam([u_t], lr=rho)
 		total_Cost = 0
 		for t in range(T):
