@@ -127,82 +127,60 @@ def lazyOpt(fn, lwrBnd, uprBnd, disc, intMask):
 	print('Optimal params: ',inp_opt)
 	print('Between: ', inp_lwr, ' and ', inp_upr)
 
+def randu(m,n,a,b):
+	return (b-a)*torch.rand(m,n)+a
+
 if __name__ == '__main__':
 	torch.manual_seed(3) #5
 	device = 'cpu'#'cuda' if torch.cuda.is_available() else 'cpu'
 	dtype = torch.FloatTensor
+	
+	RETRAIN = False
+	# RETRAIN = True
 
-	k, b, m, dt, T = 1, 1, 1, 0.1, 400
+	EXACT = False
+	EXACT = True
+
+	T = 300
 	M = 10000
 
-	x = (torch.rand(M, 2).type(dtype)-0.5)*2
-	u = (torch.rand(M, 1).type(dtype)-0.5)*2
-
-	# Continuous-Time state-space matrices
-	A_x = torch.tensor([[0,1],[0,0]]).type(dtype)
-	A_eta = torch.tensor([[0,0],[-1/m,-1/m]]).type(dtype)
-	B_x = torch.tensor([[0],[1/m]]).type(dtype)
-
-	# Convert state-space matrices to discrete-time
-	A_x = dt*A_x+torch.tensor([[1,0],[0,1]]).type(dtype)
-	A_eta = dt*A_eta
-	B_x = dt*B_x
-
-	# Define state transition function
-	def eta_fn(x,u):
-		pos = x[:,0][:,None]
-		dpos = x[:,1][:,None]
-		Fs = k*pos*(pos-0.5)*(pos+0.5)
-		Fd = b*dpos*(dpos-0.5)*(dpos+0.5)
-		return torch.cat((Fs, Fd), 1)
+	x = randu(M,1,-1,7).type(dtype)
+	u = randu(M,1,-2,2).type(dtype)
 
 	def f_exact(x,u):
-		return f(x, eta_fn(x,u), u)
-
-	def f(x,eta,u):
-		return torch.transpose(
-			   torch.matmul(A_x,   torch.transpose(x,  0,1))
-			 + torch.matmul(A_eta, torch.transpose(eta,0,1))
-			 + torch.matmul(B_x,   torch.transpose(u,  0,1))
-			,0,1)
-
-	# def h(x,eta,u):
-	# 	return dt*torch.cat((3*k*x[:,0][:,None]**2, 3*b*x[:,1][:,None]**2), 1)+eta
+		return 1+0.5*u**4+0.5*u**3-u**2-1.5*u
 
 	# Initialize NN model
 	H = 70
-	# tilde_h = torch.nn.Sequential(
-	# 			torch.nn.Linear(5, H),
-	# 			torch.nn.ReLU(),
-	# 			torch.nn.ReLU(),
-	# 			torch.nn.Linear(H, 2),
-	# 		).to(device)	# (x_t, eta_t, u_t) -> (eta_tp1)
-	tilde_h = torch.nn.Linear(5, 2, bias=False)
+	tilde_f = torch.nn.Sequential(
+				torch.nn.Linear(2, H),
+				torch.nn.ReLU(),
+				torch.nn.ReLU(),
+				torch.nn.Linear(H, 1),
+			).to(device)	# (x_t, eta_t, u_t) -> (eta_tp1)
+	# tilde_f = torch.nn.Linear(2, 1, bias=False)
 
 	# Generate model
-	eta = eta_fn(x,u)
-	x_tp1 = f(x,eta,u)
-	eta_tp1 = eta_fn(x_tp1,u)
-	# eta_tp1 = h(x,eta,u)
-	# tilde_h = train_model(tilde_h, torch.cat((x, eta, u), 1), eta_tp1)
-	# torch.save(tilde_h.state_dict(), 'tilde_h.pt')
-
-	# Load model
-	tilde_h.load_state_dict(torch.load('tilde_h.pt'))
+	x_tp1 = f_exact(x,u)
+	if RETRAIN:
+		tilde_f = train_model(tilde_f, torch.cat((x, u), 1), x_tp1)
+		torch.save(tilde_f.state_dict(), 'tilde_f.pt')
+	else:
+		tilde_f.load_state_dict(torch.load('tilde_f.pt'))
 
 	# Compare H
-	etaobxi = torch.zeros((2,5))
-	xixi = torch.zeros((5,5))
-	for i in range(M):
-		etao = eta_tp1[i,:][:,None]
-		xi = torch.cat((x[i,:][:,None], eta[i,:][:,None], u[i][:,None]), 0)
-		etaobxi+= torch.matmul(etao, torch.transpose(xi,0,1))
-		xixi+= torch.matmul(xi, torch.transpose(xi,0,1))
-	etaobxi/= M
-	xixi/= M
-	H = torch.matmul(etaobxi, torch.inverse(xixi))
-	print('H=',H)
-	print('~H=',[h for h in tilde_h.parameters()])
+	# etaobxi = torch.zeros((2,5))
+	# xixi = torch.zeros((5,5))
+	# for i in range(M):
+	# 	etao = eta_tp1[i,:][:,None]
+	# 	xi = torch.cat((x[i,:][:,None], eta[i,:][:,None], u[i][:,None]), 0)
+	# 	etaobxi+= torch.matmul(etao, torch.transpose(xi,0,1))
+	# 	xixi+= torch.matmul(xi, torch.transpose(xi,0,1))
+	# etaobxi/= M
+	# xixi/= M
+	# H = torch.matmul(etaobxi, torch.inverse(xixi))
+	# print('H=',H)
+	# print('~H=',[h for h in tilde_h.parameters()])
 
 	## Simulate model system
 	'''
@@ -273,24 +251,44 @@ if __name__ == '__main__':
 		x_vec = []
 		u_vec = []
 		r_vec = []
-		x_t = torch.tensor([[0.5,0.5]]).type(dtype)
-		u_t = Variable(torch.tensor([[0]]).type(dtype), requires_grad=True)
-		ref = lambda t : torch.tensor([[0,0]]).type(dtype)
-		Q = torch.tensor([[1,0],[0,1]]).type(dtype)
+		x_t = torch.tensor([[2]]).type(dtype)
+		u_t = Variable(torch.tensor([[-1.6]]).type(dtype), requires_grad=True)
+		ref = lambda t : torch.tensor([[-1]]).type(dtype)
+		Q = torch.tensor([[1]]).type(dtype)
 		R = torch.tensor([[0]]).type(dtype)
 		loss_fn = lambda x,r,u : (torch.matmul(r-x,torch.matmul(Q,torch.transpose(r-x,0,1))) + torch.matmul(u,torch.matmul(R,torch.transpose(u,0,1))))[0,0]
-		N = 25
-		rho = 1
-		optimizer = torch.optim.Adam([u_t], lr=rho)
+		u_poss = np.linspace(-2,2,50)
+		tt,uu = np.meshgrid(range(T), u_poss, indexing='ij')
+		J_surf = np.zeros(np.shape(tt))
+		N = 2
+		rho = 0.004
+		optimizer = torch.optim.SGD([u_t], lr=rho)
 		total_Cost = 0
 		for t in range(T):
+			for ui in range(len(u_poss)):
+				J = torch.tensor(0).type(dtype)
+				x_t_this = x_t.detach().clone()
+				x_tpi = [x_t_this]
+				u_this = torch.tensor([[u_poss[ui]]]).type(dtype)
+				# eta_tpi = [eta_fn(x_t_this, u_this)]
+				for i in range(1,N+1):
+					# eta_tpi.append(tilde_h(torch.cat((x_tpi[-1], eta_tpi[-1], u_this), 1)))
+					if EXACT:
+						x_tpi.append(f_exact(x_tpi[-1], u_this))
+					else:
+						x_tpi.append(tilde_f(torch.cat((x_tpi[-1], u_this), 1)))
+					J+= loss_fn(x_tpi[-1], ref(t), u_this)
+				J_surf[t,ui] = J.item()
+
 			J = torch.tensor(0).type(dtype)
 			x_tpi = [x_t]
-			eta_tpi = [eta_fn(x_t, u_t)]
+			# eta_tpi = [eta_fn(x_t, u_t)]
 			for i in range(1,N+1):
-				eta_tpi.append(tilde_h(torch.cat((x_tpi[-1], eta_tpi[-1], u_t), 1)))
-				# x_tpi.append(f(x_tpi[-1], eta_tpi[-2], u_t))
-				x_tpi.append(f_exact(x_tpi[-1], u_t))
+				# eta_tpi.append(tilde_h(torch.cat((x_tpi[-1], eta_tpi[-1], u_t), 1)))
+				if EXACT:
+					x_tpi.append(f_exact(x_tpi[-1], u_t))
+				else:
+					x_tpi.append(tilde_f(torch.cat((x_tpi[-1], u_t), 1)))
 				J+= loss_fn(x_tpi[-1], ref(t), u_t)
 			optimizer.zero_grad()
 			J.backward()
@@ -300,20 +298,33 @@ if __name__ == '__main__':
 			x_t = x_t.detach().clone()
 			x_vec.append(x_t[0,0].item())
 			r_vec.append(ref(t)[0,0].item())
-			# total_Cost+= (x_vec[-1]-r_vec[-1])**2
-			total_Cost+= abs(x_vec[-1]-r_vec[-1])
+			total_Cost+= (x_vec[-1]-r_vec[-1])**2
 
-		plt.figure()
-		plt.plot(range(T), x_vec, label='x')
-		plt.plot(range(T), r_vec, label='r')
-		plt.plot(range(T), u_vec, label='u')
-		plt.legend()
+			# print(100*t/T)
+
+		# plt.figure()
+		# plt.plot(range(T), x_vec, label='x')
+		# plt.plot(range(T), r_vec, label='r')
+		# plt.plot(range(T), u_vec, label='u')
+		# plt.legend()
+		# plt.xlabel('Time')
+		# plt.show()
+
+		fig = plt.figure()
+		ax1 = fig.add_subplot(111, projection='3d')
+		ax1.plot_surface(tt,uu,np.log(J_surf), rstride=1, cstride=1, cmap=cm.coolwarm, linewidth=0, antialiased=False)
+		plt.plot(range(T), x_vec, label='x', zorder=10)
+		plt.plot(range(T), r_vec, label='r', zorder=11)
+		plt.plot(range(T), u_vec, label='u', zorder=12)
+		ax1.view_init(azim=-90, elev=90)
+		plt.legend(loc='lower center', ncol=3)
 		plt.xlabel('Time')
+		plt.tight_layout()
+		ax1.set_zticks([])
 		plt.show()
 
-		print(total_Cost)
 		return total_Cost
 
-	controller()
+	print(controller())
 
 	# lazyOpt(controller, (0,8,0.001), (0,30,.004), (4,4,4), (False, True, False))

@@ -132,7 +132,7 @@ if __name__ == '__main__':
 	device = 'cpu'#'cuda' if torch.cuda.is_available() else 'cpu'
 	dtype = torch.FloatTensor
 
-	k, b, m, dt, T = 1, 1, 1, 0.1, 400
+	k, b, m, dt, T = 1, 1, 1, 0.1, 200
 	M = 10000
 
 	x = (torch.rand(M, 2).type(dtype)-0.5)*2
@@ -150,10 +150,8 @@ if __name__ == '__main__':
 
 	# Define state transition function
 	def eta_fn(x,u):
-		pos = x[:,0][:,None]
-		dpos = x[:,1][:,None]
-		Fs = k*pos*(pos-0.5)*(pos+0.5)
-		Fd = b*dpos*(dpos-0.5)*(dpos+0.5)
+		Fs = k*x[:,0][:,None]**3
+		Fd = b*x[:,1][:,None]**3
 		return torch.cat((Fs, Fd), 1)
 
 	def f_exact(x,u):
@@ -163,11 +161,11 @@ if __name__ == '__main__':
 		return torch.transpose(
 			   torch.matmul(A_x,   torch.transpose(x,  0,1))
 			 + torch.matmul(A_eta, torch.transpose(eta,0,1))
-			 + torch.matmul(B_x,   torch.transpose(u,  0,1))
+			 + torch.matmul(B_x,   torch.transpose(u**2,  0,1))
 			,0,1)
 
-	# def h(x,eta,u):
-	# 	return dt*torch.cat((3*k*x[:,0][:,None]**2, 3*b*x[:,1][:,None]**2), 1)+eta
+	def h(x,eta,u):
+		return dt*torch.cat((3*k*x[:,0][:,None]**2, 3*b*x[:,1][:,None]**2), 1)+eta
 
 	# Initialize NN model
 	H = 70
@@ -191,18 +189,18 @@ if __name__ == '__main__':
 	tilde_h.load_state_dict(torch.load('tilde_h.pt'))
 
 	# Compare H
-	etaobxi = torch.zeros((2,5))
-	xixi = torch.zeros((5,5))
-	for i in range(M):
-		etao = eta_tp1[i,:][:,None]
-		xi = torch.cat((x[i,:][:,None], eta[i,:][:,None], u[i][:,None]), 0)
-		etaobxi+= torch.matmul(etao, torch.transpose(xi,0,1))
-		xixi+= torch.matmul(xi, torch.transpose(xi,0,1))
-	etaobxi/= M
-	xixi/= M
-	H = torch.matmul(etaobxi, torch.inverse(xixi))
-	print('H=',H)
-	print('~H=',[h for h in tilde_h.parameters()])
+	# etaobxi = torch.zeros((2,5))
+	# xixi = torch.zeros((5,5))
+	# for i in range(M):
+	# 	etao = eta_tp1[i,:][:,None]
+	# 	xi = torch.cat((x[i,:][:,None], eta[i,:][:,None], u[i][:,None]), 0)
+	# 	etaobxi+= torch.matmul(etao, torch.transpose(xi,0,1))
+	# 	xixi+= torch.matmul(xi, torch.transpose(xi,0,1))
+	# etaobxi/= M
+	# xixi/= M
+	# H = torch.matmul(etaobxi, torch.inverse(xixi))
+	# print('H=',H)
+	# print('~H=',[h for h in tilde_h.parameters()])
 
 	## Simulate model system
 	'''
@@ -274,16 +272,33 @@ if __name__ == '__main__':
 		u_vec = []
 		r_vec = []
 		x_t = torch.tensor([[0.5,0.5]]).type(dtype)
-		u_t = Variable(torch.tensor([[0]]).type(dtype), requires_grad=True)
+		u_t = Variable(torch.tensor([[-0.1]]).type(dtype), requires_grad=True)
 		ref = lambda t : torch.tensor([[0,0]]).type(dtype)
 		Q = torch.tensor([[1,0],[0,1]]).type(dtype)
 		R = torch.tensor([[0]]).type(dtype)
 		loss_fn = lambda x,r,u : (torch.matmul(r-x,torch.matmul(Q,torch.transpose(r-x,0,1))) + torch.matmul(u,torch.matmul(R,torch.transpose(u,0,1))))[0,0]
-		N = 25
-		rho = 1
+		u_poss = np.linspace(-0.6,0.6,50)
+		tt,uu = np.meshgrid(range(T), u_poss, indexing='ij')
+		J_surf = np.zeros(np.shape(tt))
+		N = 20
+		rho = 0.1
 		optimizer = torch.optim.Adam([u_t], lr=rho)
 		total_Cost = 0
 		for t in range(T):
+			for ui in range(len(u_poss)):
+				J = torch.tensor(0).type(dtype)
+				x_t_this = x_t.detach().clone()
+				x_tpi = [x_t_this]
+				u_this = torch.tensor([[u_poss[ui]]]).type(dtype)
+				eta_tpi = [eta_fn(x_t_this, u_this)]
+				for i in range(1,N+1):
+					eta_tpi.append(tilde_h(torch.cat((x_tpi[-1], eta_tpi[-1], u_this), 1)))
+					# x_tpi.append(f(x_tpi[-1], eta_tpi[-2], u_this))
+					x_tpi.append(f_exact(x_tpi[-1], u_this))
+					J+= loss_fn(x_tpi[-1], ref(t), u_this)
+				# breakpoint()
+				J_surf[t,ui] = J.item()
+
 			J = torch.tensor(0).type(dtype)
 			x_tpi = [x_t]
 			eta_tpi = [eta_fn(x_t, u_t)]
@@ -300,20 +315,33 @@ if __name__ == '__main__':
 			x_t = x_t.detach().clone()
 			x_vec.append(x_t[0,0].item())
 			r_vec.append(ref(t)[0,0].item())
-			# total_Cost+= (x_vec[-1]-r_vec[-1])**2
-			total_Cost+= abs(x_vec[-1]-r_vec[-1])
+			total_Cost+= (x_vec[-1]-r_vec[-1])**2
 
-		plt.figure()
-		plt.plot(range(T), x_vec, label='x')
-		plt.plot(range(T), r_vec, label='r')
-		plt.plot(range(T), u_vec, label='u')
-		plt.legend()
+			# print(100*t/T)
+
+		# plt.figure()
+		# plt.plot(range(T), x_vec, label='x')
+		# plt.plot(range(T), r_vec, label='r')
+		# plt.plot(range(T), u_vec, label='u')
+		# plt.legend()
+		# plt.xlabel('Time')
+		# plt.show()
+
+		fig = plt.figure()
+		ax1 = fig.add_subplot(111, projection='3d')
+		ax1.plot_surface(tt,uu,np.log(J_surf), rstride=1, cstride=1, cmap=cm.coolwarm, linewidth=0, antialiased=False)
+		plt.plot(range(T), x_vec, label='x', zorder=10)
+		plt.plot(range(T), r_vec, label='r', zorder=11)
+		plt.plot(range(T), u_vec, label='u', zorder=12)
+		ax1.view_init(azim=-90, elev=90)
+		plt.legend(loc='lower center', ncol=3)
 		plt.xlabel('Time')
+		plt.tight_layout()
+		ax1.set_zticks([])
 		plt.show()
 
-		print(total_Cost)
 		return total_Cost
 
-	controller()
+	print(controller())
 
 	# lazyOpt(controller, (0,8,0.001), (0,30,.004), (4,4,4), (False, True, False))
