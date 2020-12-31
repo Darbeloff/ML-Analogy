@@ -139,7 +139,7 @@ if __name__ == '__main__':
 	# RETRAIN = True
 
 	EXACT = False
-	EXACT = True
+	# EXACT = True
 
 	T = 300
 	M = 10000
@@ -314,7 +314,7 @@ if __name__ == '__main__':
 		ax1 = fig.add_subplot(111, projection='3d')
 		ax1.plot_surface(tt,uu,np.log(J_surf), rstride=1, cstride=1, cmap=cm.coolwarm, linewidth=0, antialiased=False)
 		plt.plot(range(T), x_vec, label='x', zorder=10)
-		plt.plot(range(T), r_vec, label='r', zorder=11)
+		plt.plot(range(T), [-0.5]*T, label='r', zorder=11)
 		plt.plot(range(T), u_vec, label='u', zorder=12)
 		ax1.view_init(azim=-90, elev=90)
 		plt.legend(loc='lower center', ncol=3)
