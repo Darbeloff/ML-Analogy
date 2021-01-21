@@ -45,29 +45,41 @@ def train_model(model, x, y, title=None):
 	optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
 	def step(x_batch, y_batch, model, loss_fn):
+		# Send data to GPU if applicable
 		x_batch = x_batch.to(device)
 		y_batch = y_batch.to(device)
 
+		# Extract state
 		x_tm1 = x_batch[:,:2]
 		x_t = y_batch
 
+		# Compute augmented state
 		eta_tm1 = model(x_tm1)
 		eta_t = model(y_batch)
 
-		u_tm1 = x_batch[:,2][:,None]
+		# Transpose for linear transition
+		x_tm1 = torch.transpose(x_tm1, 0,1)
+		x_t   = torch.transpose(x_t  , 0,1)
+		eta_tm1 = torch.transpose(eta_tm1, 0,1)
+		eta_t   = torch.transpose(eta_t  , 0,1)
+
+		# Extract/create input
+		u_tm1 = x_batch[:,2][None,:]
 		u_t = torch.zeros(u_tm1.size())
 
-		xi_tm1 = torch.transpose(torch.cat((x_tm1, eta_tm1, u_tm1), 1), 0,1)
-		xi_t   = torch.transpose(torch.cat((x_t  , eta_t  , u_t  ), 1), 0,1)
+		# Assemble xi
+		xi_tm1 = torch.cat((x_tm1, eta_tm1, u_tm1), 0)
+		xi_t   = torch.cat((x_t  , eta_t  , u_t  ), 0)
 
 		xi_pinv = torch.pinverse(xi_tm1)
-		A = torch.matmul(xi_t, xi_pinv)
-		H = torch.matmul(torch.transpose(eta_t, 0,1), xi_pinv)
 
-		xi_hat = torch.matmul(A,xi_tm1)
+		A = torch.matmul(  x_t, xi_pinv)
+		H = torch.matmul(eta_t, xi_pinv)
+
+		x_hat   = torch.matmul(A,xi_tm1)
 		eta_hat = torch.matmul(H,xi_tm1)
 
-		return loss_fn(xi_t, xi_hat) + loss_fn(torch.transpose(eta_t, 0,1), eta_hat)
+		return loss_fn(x_t, x_hat) + loss_fn(eta_t, eta_hat)
 
 	for t in range(n_epochs):
 		batch_losses = []
@@ -109,33 +121,33 @@ def train_model(model, x, y, title=None):
 	model.eval()
 	return model
 
-def lazyOpt(fn, lwrBnd, uprBnd, disc, intMask):
-	n_vars = len(disc)
+# def lazyOpt(fn, lwrBnd, uprBnd, disc, intMask):
+# 	n_vars = len(disc)
 
-	step = []
-	for v in range(n_vars):
-		step.append((uprBnd[v]-lwrBnd[v])/disc[v])
-	step = np.asarray(step)
+# 	step = []
+# 	for v in range(n_vars):
+# 		step.append((uprBnd[v]-lwrBnd[v])/disc[v])
+# 	step = np.asarray(step)
 
-	J = np.zeros(disc)
-	for i in range(np.prod(disc)):
-		idx = np.unravel_index(i,disc)
-		inp = (np.asarray(lwrBnd).copy()+idx*step).tolist()
-		for v in range(len(inp)):
-			if intMask[v]:
-				inp[v] = int(inp[v])
-		J[idx] = controller(inp)
+# 	J = np.zeros(disc)
+# 	for i in range(np.prod(disc)):
+# 		idx = np.unravel_index(i,disc)
+# 		inp = (np.asarray(lwrBnd).copy()+idx*step).tolist()
+# 		for v in range(len(inp)):
+# 			if intMask[v]:
+# 				inp[v] = int(inp[v])
+# 		J[idx] = controller(inp)
 
-	mindx = np.asarray(np.unravel_index(np.argmin(J), disc))
-	mindx_m1 = [max(0,v-1) for v in mindx]
-	mindx_p1 = [min(uprBnd[v], mindx[v]+1) for v in range(len(mindx))]
-	inp = np.asarray(lwrBnd).copy()
-	inp_opt = inp+mindx*step
-	inp_lwr = inp+mindx_m1*step
-	inp_upr = inp+mindx_p1*step
+# 	mindx = np.asarray(np.unravel_index(np.argmin(J), disc))
+# 	mindx_m1 = [max(0,v-1) for v in mindx]
+# 	mindx_p1 = [min(uprBnd[v], mindx[v]+1) for v in range(len(mindx))]
+# 	inp = np.asarray(lwrBnd).copy()
+# 	inp_opt = inp+mindx*step
+# 	inp_lwr = inp+mindx_m1*step
+# 	inp_upr = inp+mindx_p1*step
 
-	print('Optimal params: ',inp_opt)
-	print('Between: ', inp_lwr, ' and ', inp_upr)
+# 	print('Optimal params: ',inp_opt)
+# 	print('Between: ', inp_lwr, ' and ', inp_upr)
 
 def randu(m,n,a,b):
 	return (b-a)*torch.rand(m,n)+a
@@ -145,6 +157,9 @@ if __name__ == '__main__':
 	torch.manual_seed(3) #5
 	device = 'cpu'#'cuda' if torch.cuda.is_available() else 'cpu'
 	dtype = torch.FloatTensor
+
+	RETRAIN = False
+	# RETRAIN = True
 
 	# Parameters
 	k, b, m, dt, T = 1, 1, 1, 0.1, 400
@@ -162,23 +177,26 @@ if __name__ == '__main__':
 		A_x = dt*A_x+torch.tensor([[1,0],[0,1]]).type(dtype)
 		A_eta = dt*A_eta
 		B_x = dt*B_x
-
+		# breakpoint()
 		# Nonlinear elements
 		Fs = k*x[:,0][:,None]**3
 		Fd = b*x[:,1][:,None]**3
 		eta = torch.cat((Fs, Fd), 1)
 
-		return torch.transpose(
-			   torch.matmul(A_x,   torch.transpose(x,  0,1))
-			 + torch.matmul(A_eta, torch.transpose(eta,0,1))
-			 + torch.matmul(B_x,   torch.transpose(u,  0,1))
-			,0,1)
+		return torch.matmul(A_x  ,   x) + \
+			   torch.matmul(A_eta, eta) + \
+			   torch.matmul(B_x  ,   u)
 
 	# Create training data
-	x_tm1 = randu(M,2,-1,1)
-	u_tm1 = randu(M,1,-1,1)
-	x_t = f(x_tm1,u_tm1)
+	x_tm1 = randu(2,M,-1,1).type(dtype)
+	u_tm1 = randu(2,M,-1,1).type(dtype)
 
+	fun = torch.nn.Linear(2,2)
+	breakpoint()
+
+	x_t = fun(x_tm1,u_tm1)
+
+	# Initialize model
 	g = torch.nn.Sequential(
 		torch.nn.Linear(2,H),
 		torch.nn.ReLU(),
@@ -187,9 +205,33 @@ if __name__ == '__main__':
 		torch.nn.ReLU(),
 		torch.nn.Linear(H,leta))
 
-	g = train_model(g, torch.cat((x_tm1, u_tm1), 1), x_t)
+	# Train nonlinear model
+	if RETRAIN:
+		g = train_model(g, torch.cat((x_tm1, u_tm1), 1), x_t)
+		torch.save(g.state_dict(), 'g.pt')
+	else:
+		g.load_state_dict(torch.load('g.pt'))
 
+	# Train linear model
+	eta_tm1 = torch.transpose(g(x_tm1), 0,1)
+	eta_t   = torch.transpose(g(x_t)  , 0,1)
+	x_tm1 = torch.transpose(x_tm1,0,1)
+	x_t   = torch.transpose(x_t  ,0,1)
+	u_tm1 = torch.transpose(u_tm1,0,1)
+	u_t = torch.zeros(u_tm1.size()).type(dtype)
+	xi_tm1 = torch.cat((x_tm1, eta_tm1, u_tm1), 0)
+	xi_t   = torch.cat((x_t  , eta_t  , u_t  ), 0)
+	xi_pinv = torch.pinverse(xi_tm1)
+	A = torch.matmul(  x_t, xi_pinv)
+	H = torch.matmul(eta_t, xi_pinv)
 
+	# Simulate step response
+	x0 = torch.tensor([[0],[0]]).type(dtype)
+	x = [x0]
+	xs = [x0]
+	u = [1]
+	eta = g(x0)
+	# for t in range(1,T):
 
 	breakpoint()
 
