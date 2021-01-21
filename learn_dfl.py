@@ -14,32 +14,46 @@ from matplotlib import cm
 from matplotlib.ticker import LinearLocator, FormatStrFormatter
 import matplotlib.pyplot as plt
 
+def DFL(x_t, x_tm1, eta_fn, u_tm1):
+	# Compute augmented state
+	eta_tm1 = eta_fn(x_tm1)
+	eta_t   = eta_fn(x_t  )
+
+	# Dummy input
+	u_t = torch.zeros(u_tm1.size())
+
+	# Assemble xi
+	xi_tm1 = torch.cat((x_tm1, eta_tm1, u_tm1), 0)
+	xi_t   = torch.cat((x_t  , eta_t  , u_t  ), 0)
+
+	# Linear regression to compute A and H
+	xi_pinv = torch.pinverse(xi_tm1)
+	A = torch.matmul(  x_t, xi_pinv)
+	H = torch.matmul(eta_t, xi_pinv)
+
+	return A, H, eta_t, xi_tm1
+
 def train_model(model, x, y, title=None):
-	if len(np.shape(x))==1:
-		x = x[:, None]
-	if len(np.shape(y))==1:
-		y = y[:, None]
-	D_in = np.shape(x)[1]
-	D_out = np.shape(y)[1]
-	N = 50
+	# Reshape x and y to be vector of tensors
+	x = torch.transpose(x,0,1)
+	y = torch.transpose(y,0,1)
 
 	dataset = TensorDataset(x, y)
 
 	N_train = int(3*len(y)/5)
 	train_dataset, val_dataset = random_split(dataset, [N_train,len(y)-N_train])
 
-	train_loader = DataLoader(dataset=train_dataset, batch_size=N)
-	val_loader = DataLoader(dataset=val_dataset, batch_size=N)
+	train_loader = DataLoader(dataset=train_dataset, batch_size=50)
+	val_loader   = DataLoader(dataset=val_dataset  , batch_size=50)
 
 	loss_fn = torch.nn.MSELoss(reduction='sum')
-	val_loss_fn = lambda target, output: loss_fn(target[:,:2], output[:,:2])
 
 	# Use the optim package to define an Optimizer that will update the weights of
 	# the model for us. Here we will use Adam; the optim package contains many other
 	# optimization algorithms. The first argument to the Adam constructor tells the
 	# optimizer which Tensors it should update.
 	learning_rate = .0001
-	n_epochs = 100
+	n_epochs = 1000
 	training_losses = []
 	validation_losses = []
 	optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
@@ -49,36 +63,22 @@ def train_model(model, x, y, title=None):
 		x_batch = x_batch.to(device)
 		y_batch = y_batch.to(device)
 
-		# Extract state
-		x_tm1 = x_batch[:,:2]
-		x_t = y_batch
+		# Reshape data for linear algebra
+		x_batch = torch.transpose(x_batch, 0,1)
+		y_batch = torch.transpose(y_batch, 0,1)
 
-		# Compute augmented state
-		eta_tm1 = model(x_tm1)
-		eta_t = model(y_batch)
+		# Label input data
+		x_tm1 = x_batch[:2,:]
+		u_tm1 = x_batch[2,:][None,:]
+		x_t   = y_batch
 
-		# Transpose for linear transition
-		x_tm1 = torch.transpose(x_tm1, 0,1)
-		x_t   = torch.transpose(x_t  , 0,1)
-		eta_tm1 = torch.transpose(eta_tm1, 0,1)
-		eta_t   = torch.transpose(eta_t  , 0,1)
+		A, H, eta_t, xi_tm1 = DFL(x_t, x_tm1, model, u_tm1)
 
-		# Extract/create input
-		u_tm1 = x_batch[:,2][None,:]
-		u_t = torch.zeros(u_tm1.size())
-
-		# Assemble xi
-		xi_tm1 = torch.cat((x_tm1, eta_tm1, u_tm1), 0)
-		xi_t   = torch.cat((x_t  , eta_t  , u_t  ), 0)
-
-		xi_pinv = torch.pinverse(xi_tm1)
-
-		A = torch.matmul(  x_t, xi_pinv)
-		H = torch.matmul(eta_t, xi_pinv)
-
+		# Estimate x and eta using DFL model
 		x_hat   = torch.matmul(A,xi_tm1)
 		eta_hat = torch.matmul(H,xi_tm1)
 
+		# Return 
 		return loss_fn(x_t, x_hat) + loss_fn(eta_t, eta_hat)
 
 	for t in range(n_epochs):
@@ -152,6 +152,13 @@ def train_model(model, x, y, title=None):
 def randu(m,n,a,b):
 	return (b-a)*torch.rand(m,n)+a
 
+class Transpose(torch.nn.Module):
+	def __init__(self):
+		super(Transpose, self).__init__()
+
+	def forward(self, x):
+		return torch.transpose(x, 0,1)
+
 if __name__ == '__main__':
 	# Options
 	torch.manual_seed(3) #5
@@ -177,11 +184,11 @@ if __name__ == '__main__':
 		A_x = dt*A_x+torch.tensor([[1,0],[0,1]]).type(dtype)
 		A_eta = dt*A_eta
 		B_x = dt*B_x
-		# breakpoint()
+
 		# Nonlinear elements
-		Fs = k*x[:,0][:,None]**3
-		Fd = b*x[:,1][:,None]**3
-		eta = torch.cat((Fs, Fd), 1)
+		Fs = k*x[0,:][None,:]**3
+		Fd = b*x[1,:][None,:]**3
+		eta = torch.cat((Fs, Fd), 0)
 
 		return torch.matmul(A_x  ,   x) + \
 			   torch.matmul(A_eta, eta) + \
@@ -189,200 +196,48 @@ if __name__ == '__main__':
 
 	# Create training data
 	x_tm1 = randu(2,M,-1,1).type(dtype)
-	u_tm1 = randu(2,M,-1,1).type(dtype)
-
-	fun = torch.nn.Linear(2,2)
-	breakpoint()
-
-	x_t = fun(x_tm1,u_tm1)
+	u_tm1 = randu(1,M,-1,1).type(dtype)
+	x_t = f(x_tm1,u_tm1)
 
 	# Initialize model
 	g = torch.nn.Sequential(
+		Transpose(),
 		torch.nn.Linear(2,H),
 		torch.nn.ReLU(),
 		torch.nn.ReLU(),
 		torch.nn.ReLU(),
 		torch.nn.ReLU(),
-		torch.nn.Linear(H,leta))
+		torch.nn.Linear(H,leta),
+		Transpose() )
 
-	# Train nonlinear model
+	# Train model
 	if RETRAIN:
-		g = train_model(g, torch.cat((x_tm1, u_tm1), 1), x_t)
+		g = train_model(g, torch.cat((x_tm1, u_tm1), 0), x_t)
 		torch.save(g.state_dict(), 'g.pt')
 	else:
 		g.load_state_dict(torch.load('g.pt'))
-
-	# Train linear model
-	eta_tm1 = torch.transpose(g(x_tm1), 0,1)
-	eta_t   = torch.transpose(g(x_t)  , 0,1)
-	x_tm1 = torch.transpose(x_tm1,0,1)
-	x_t   = torch.transpose(x_t  ,0,1)
-	u_tm1 = torch.transpose(u_tm1,0,1)
-	u_t = torch.zeros(u_tm1.size()).type(dtype)
-	xi_tm1 = torch.cat((x_tm1, eta_tm1, u_tm1), 0)
-	xi_t   = torch.cat((x_t  , eta_t  , u_t  ), 0)
-	xi_pinv = torch.pinverse(xi_tm1)
-	A = torch.matmul(  x_t, xi_pinv)
-	H = torch.matmul(eta_t, xi_pinv)
+	A, H, _, _ = DFL(x_t, x_tm1, g, u_tm1)
 
 	# Simulate step response
 	x0 = torch.tensor([[0],[0]]).type(dtype)
-	x = [x0]
-	xs = [x0]
-	u = [1]
-	eta = g(x0)
-	# for t in range(1,T):
+	x   = float('nan')*torch.ones(2,T).type(dtype)
+	xs  = float('nan')*torch.ones(2,T).type(dtype)
+	eta = float('nan')*torch.ones(2,T).type(dtype)
+	u   =          0.5*torch.ones(1,T).type(dtype)
+	x  [:,0] = torch.squeeze(  x0 )
+	xs [:,0] = torch.squeeze(  x0 )
+	eta[:,0] = torch.squeeze(g(x0))
+	for t in range(1,T):
+		x[:,t] = f(x[:,t-1][:,None], u[:,t-1][:,None]).squeeze()
+		xi_tm1 = torch.cat((xs[:,t-1], eta[:,t-1], u[:,t-1]), 0)[:,None]
+		xs[:,t] = torch.matmul(A,xi_tm1).squeeze()
+		eta[:,t] = torch.matmul(H,xi_tm1).squeeze()
 
-	breakpoint()
-
-	# Initialize NN models
-	def model(D_in, H, D_out):
-		return 
-		# return torch.nn.Linear(D_in, D_out, bias=False)
-	H = 30
-	tilde_h = torch.nn.Sequential(
-				# torch.nn.BatchNorm1d(num_features=D_in),
-				torch.nn.Linear(5, H),
-				torch.nn.ReLU(),
-				# torch.nn.ReLU(),
-				torch.nn.Linear(H, 2),
-			).to(device)	# (x_t, eta_t, u_t) -> (eta_tp1)
-	# tilde_h = torch.nn.Linear(5,2)
-
-	# Generate model
-	eta = eta_fn(x,u)
-	x_tp1 = f(x,eta,u)
-	eta_tp1 = eta_fn(x_tp1,u)
-	# eta_tp1 = h(x,eta,u)
-	tilde_h = train_model(tilde_h, torch.cat((x, eta, u), 1), eta_tp1)
-	torch.save(tilde_h.state_dict(), 'tilde_h.pt')
-
-	# Load model
-	# tilde_h.load_state_dict(torch.load('tilde_h.pt'))
-
-	# Compare H
-	# etaobxi = torch.zeros((2,5))
-	# xixi = torch.zeros((5,5))
-	# for i in range(M):
-	# 	etao = eta_tp1[i,:][:,None]
-	# 	xi = torch.cat((x[i,:][:,None], eta[i,:][:,None], u[i][:,None]), 0)
-	# 	# breakpoint()
-	# 	etaobxi+= torch.matmul(etao, torch.transpose(xi,0,1))
-	# 	xixi+= torch.matmul(xi, torch.transpose(xi,0,1))
-	# etaobxi/= M
-	# xixi/= M
-	# H = torch.matmul(etaobxi, torch.inverse(xixi))
-	# print('H=',H)
-
-	## Simulate model system
-	'''
-	x_vec = [0]
-	x_app = [0]
-	x_sim = [0]
-	Fs_vec = [0]
-	Fs_app = [0]
-	Fs_sim = [0]
-	Fd_vec = [0]
-	Fd_app = [0]
-	Fd_sim = [0]
-	x_t = torch.tensor([[0,0]]).type(dtype)
-	u_t = torch.tensor([[1]]).type(dtype)
-	eta_t = torch.tensor([[0,0]]).type(dtype)
-	eta_t_app = torch.tensor([[0,0]]).type(dtype)
-	eta_t_sim = torch.tensor([[0,0]]).type(dtype)
-	for t in range(T):
-		# Forward propagate
-		eta_tp1_app = h(x_t, eta_t, u_t)
-		eta_tp1_sim = tilde_h(torch.cat((x_t, eta_t, u_t), 1))
-		x_tp1 = f(x_t, eta_t, u_t)
-		x_tp1_app = f(x_t, eta_t_app, u_t)
-		x_tp1_sim = f(x_t, eta_t_sim, u_t)
-		u_tp1 = torch.tensor([[1]]).type(dtype)
-		eta_tp1 = eta_fn(x_tp1, u_tp1)
-
-		# Record
-		x_vec.append(x_tp1[0,0].item())
-		x_app.append(x_tp1_app[0,0].item())
-		x_sim.append(x_tp1_sim[0,0].item())
-		Fs_vec.append(eta_tp1[0,0].item())
-		Fd_vec.append(eta_tp1[0,1].item())
-		Fs_app.append(eta_tp1_app[0,0].item())
-		Fd_app.append(eta_tp1_app[0,1].item())
-		Fs_sim.append(eta_tp1_sim[0,0].item())
-		Fd_sim.append(eta_tp1_sim[0,1].item())
-
-		# Iterate
-		eta_t_app = eta_tp1_app.detach().clone()
-		eta_t_sim = eta_tp1_sim.detach().clone()
-		x_t = x_tp1.detach().clone()
-		u_t = u_tp1.detach().clone()
-		eta_t = eta_tp1.detach().clone()
 	# Illustrate
 	plt.figure()
-	plt.subplot(1,3,1)
-	plt.plot(range(T+1), x_vec, label='x')
-	plt.plot(range(T+1), x_app, '*', label='x_app')
-	plt.plot(range(T+1), x_sim, '+', label='x_sim')
-	plt.legend()
-	plt.subplot(1,3,2)
-	plt.plot(range(T+1), Fs_vec, label='Fs')
-	plt.plot(range(T+1), Fs_app, '*', label='Fs_app')
-	plt.plot(range(T+1), Fs_sim, '+', label='Fs_sim')
-	plt.legend()
-	plt.subplot(1,3,3)
-	plt.plot(range(T+1), Fd_vec, label='Fd')
-	plt.plot(range(T+1), Fd_app, '*', label='Fd_app')
-	plt.plot(range(T+1), Fd_sim, '+', label='Fd_sim')
+	plt.plot(range(T), x[0,:].detach().numpy(), label='x')
+	plt.plot(range(T), u[0,:].detach().numpy(), label='u')
+	plt.plot(range(T), xs[0,:].detach().numpy(), label='xs')
+	plt.xlabel('Time')
 	plt.legend()
 	plt.show()
-	'''
-
-	# Controller
-	def controller():
-		# Q_x22, N, rho = inp
-		x_vec = []
-		u_vec = []
-		r_vec = []
-		x_t = torch.tensor([[0.5,0.5]]).type(dtype)
-		u_t = Variable(torch.tensor([[0]]).type(dtype), requires_grad=True)
-		ref = lambda t : torch.tensor([[0,0]]).type(dtype)
-		Q = torch.tensor([[1,0],[0,1]]).type(dtype)
-		R = torch.tensor([[0]]).type(dtype)
-		loss_fn = lambda x,r,u : (torch.matmul(r-x,torch.matmul(Q,torch.transpose(r-x,0,1))) + torch.matmul(u,torch.matmul(R,torch.transpose(u,0,1))))[0,0]
-		N = 30
-		rho = 0.1
-		optimizer = torch.optim.Adam([u_t], lr=rho)
-		total_Cost = 0
-		for t in range(T):
-			J = torch.tensor(0).type(dtype)
-			x_tpi = [x_t]
-			eta_tpi = [eta_fn(x_t, u_t)]
-			for i in range(1,N+1):
-				eta_tpi.append(tilde_h(torch.cat((x_tpi[-1], eta_tpi[-1], u_t), 1)))
-				x_tpi.append(f(x_tpi[-1], eta_tpi[-2], u_t))
-				# x_tpi.append(f_exact(x_tpi[-1], u_t))
-				J+= loss_fn(x_tpi[-1], ref(t), u_t)
-			optimizer.zero_grad()
-			J.backward()
-			optimizer.step()
-			u_vec.append(u_t[0,0].item())
-			x_t = f_exact(x_t, u_t)
-			x_t = x_t.detach().clone()
-			x_vec.append(x_t[0,0].item())
-			r_vec.append(ref(t)[0,0].item())
-			total_Cost+= (x_vec[-1]-r_vec[-1])**2
-
-		plt.figure()
-		plt.plot(range(T), x_vec, label='x')
-		plt.plot(range(T), r_vec, label='r')
-		plt.plot(range(T), u_vec, label='u')
-		plt.legend()
-		plt.xlabel('Time')
-		plt.show()
-
-		print(total_Cost)
-		return total_Cost
-
-	controller()
-
-	# lazyOpt(controller, (0,8,0.001), (0,30,.004), (4,4,4), (False, True, False))
