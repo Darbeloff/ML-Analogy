@@ -16,6 +16,37 @@ import matplotlib.pyplot as plt
 
 from Transpose import Transpose
 
+class LearnedDFL(torch.nn.Module):
+	def __init__(self, D_x, D_eta, D_u, H):
+		super(LearnedDFL, self).__init__()
+
+		self.D_x = D_x
+		D_xi = D_x + D_eta + D_u
+
+		self.g = torch.nn.Sequential(
+			torch.nn.Linear(D_x,H),
+			torch.nn.ReLU(),
+			torch.nn.ReLU(),
+			torch.nn.ReLU(),
+			torch.nn.Linear(H,D_eta)
+		)
+
+		self.A = torch.nn.Linear(D_xi,D_x)
+		self.H = torch.nn.Linear(D_xi,D_eta)
+
+	def forward(self, x_star):
+		x_tm1 = x_star[:,:self.D_x]
+		u_tm1 = x_star[:,self.D_x:]
+
+		eta_tm1 = self.g(x_tm1)
+		# breakpoint()		
+		xi_tm1 = torch.cat((x_tm1,eta_tm1,u_tm1), 1)
+
+		x_t = self.A(xi_tm1)
+		eta_t = self.H(xi_tm1)
+
+		return x_t, eta_t
+
 def DFL(x_t, x_tm1, eta_fn, u_tm1):
 	# Compute augmented state
 	eta_tm1 = eta_fn(x_tm1)
@@ -65,20 +96,9 @@ def train_model(model, x, y, title=None):
 		x_batch = x_batch.to(device)
 		y_batch = y_batch.to(device)
 
-		# Reshape data for linear algebra
-		x_batch = torch.transpose(x_batch, 0,1)
-		y_batch = torch.transpose(y_batch, 0,1)
-
-		# Label input data
-		x_tm1 = x_batch[:2,:]
-		u_tm1 = x_batch[2,:][None,:]
-		x_t   = y_batch
-
-		A, H, eta_t, xi_tm1 = DFL(x_t, x_tm1, model, u_tm1)
-
-		# Estimate x and eta using DFL model
-		x_hat   = torch.matmul(A,xi_tm1)
-		eta_hat = torch.matmul(H,xi_tm1)
+		x_t = y_batch
+		eta_t = model.g(x_t)
+		x_hat, eta_hat = model(x_batch)
 
 		# Return 
 		return loss_fn(x_t, x_hat) + loss_fn(eta_t, eta_hat)
@@ -164,9 +184,9 @@ if __name__ == '__main__':
 	RETRAIN = True
 
 	# Parameters
-	k, b, m, dt, T = 1, 1, 1, 0.1, 400
+	k, b, m, dt, T = 0.5, 1, 1, 0.1, 400
 	M = 10000
-	H, leta = 256, 2
+	H, leta = 256, 8
 
 	# Define state transition function
 	def f(x,u):
@@ -195,44 +215,35 @@ if __name__ == '__main__':
 	x_t = f(x_tm1,u_tm1)
 
 	# Initialize model
-	g = torch.nn.Sequential(
-		Transpose(),
-		torch.nn.Linear(2,H),
-		torch.nn.ReLU(),
-		torch.nn.ReLU(),
-		torch.nn.ReLU(),
-		torch.nn.ReLU(),
-		torch.nn.Linear(H,leta),
-		Transpose() )
+	model = LearnedDFL(2,leta,1,H)
 
 	# Train model
-	# if RETRAIN:
-	# 	g = train_model(g, torch.cat((x_tm1, u_tm1), 0), x_t)
-	# 	torch.save(g.state_dict(), 'g.pt')
-	# else:
-	# 	g.load_state_dict(torch.load('g.pt'))
-	A, H, _, _ = DFL(x_t, x_tm1, g, u_tm1)
+	if RETRAIN:
+		model = train_model(model, torch.cat((x_tm1, u_tm1), 0), x_t)
+		torch.save(model.state_dict(), 'model.pt')
+	else:
+		model.load_state_dict(torch.load('model.pt'))
 
 	# Simulate step response
-	x0 = torch.tensor([[0],[0]]).type(dtype)
-	x   = float('nan')*torch.ones(2,T).type(dtype)
-	xs  = float('nan')*torch.ones(2,T).type(dtype)
-	eta = float('nan')*torch.ones(2,T).type(dtype)
-	u   =          0.5*torch.ones(1,T).type(dtype)
-	x  [:,0] = torch.squeeze(  x0 )
-	xs [:,0] = torch.squeeze(  x0 )
-	eta[:,0] = torch.squeeze(g(x0))
+	x0 = torch.tensor([[0,0]]).type(dtype)
+	x   = float('nan')*torch.ones(T,2).type(dtype)
+	xs  = float('nan')*torch.ones(T,2).type(dtype)
+	eta = float('nan')*torch.ones(T,leta).type(dtype)
+	u   =         0.25*torch.ones(T,1).type(dtype)
+	x  [0] =         x0
+	xs [0] =         x0
+	eta[0] = model.g(x0)
 	for t in range(1,T):
-		x[:,t] = f(x[:,t-1][:,None], u[:,t-1][:,None]).squeeze()
-		xi_tm1 = torch.cat((xs[:,t-1], eta[:,t-1], u[:,t-1]), 0)[:,None]
-		xs[:,t] = torch.matmul(A,xi_tm1).squeeze()
-		eta[:,t] = torch.matmul(H,xi_tm1).squeeze()
+		x[t] = f(x[t-1][:,None], u[t-1][:,None]).squeeze()
+		xi_tm1 = torch.cat((xs[t-1], eta[t-1], u[t-1]), 0)
+		xs[t] = model.A(xi_tm1)
+		eta[t] = model.H(xi_tm1)
 
 	# Illustrate
 	plt.figure()
-	plt.plot(range(T), x[0,:].detach().numpy(), label='x')
-	plt.plot(range(T), u[0,:].detach().numpy(), label='u')
-	plt.plot(range(T), xs[0,:].detach().numpy(), label='xs')
+	plt.plot(range(T), x[:,0].detach().numpy(), label='x')
+	plt.plot(range(T), u[:,0].detach().numpy(), label='u')
+	plt.plot(range(T), xs[:,0].detach().numpy(), label='xs')
 	plt.xlabel('Time')
 	plt.legend()
 	plt.show()

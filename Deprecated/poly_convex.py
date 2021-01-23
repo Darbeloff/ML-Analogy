@@ -148,7 +148,10 @@ if __name__ == '__main__':
 	u = randu(M,1,-2,2).type(dtype)
 
 	def f_exact(x,u):
-		return 1+0.5*u**4+0.5*u**3-u**2-1.5*u
+		X=u+x/4
+		J_des = X**4+X**3-2*X**2-3*X+3
+		Q, R = 1, 0
+		return torch.sqrt((J_des-R*u**2)/Q)
 
 	# Initialize NN model
 	H = 70
@@ -252,16 +255,16 @@ if __name__ == '__main__':
 		u_vec = []
 		r_vec = []
 		x_t = torch.tensor([[2]]).type(dtype)
-		u_t = Variable(torch.tensor([[-1.6]]).type(dtype), requires_grad=True)
+		u_t = Variable(torch.tensor([[-2.5]]).type(dtype), requires_grad=True)
 		ref = lambda t : torch.tensor([[-1]]).type(dtype)
 		Q = torch.tensor([[1]]).type(dtype)
 		R = torch.tensor([[0]]).type(dtype)
 		loss_fn = lambda x,r,u : (torch.matmul(r-x,torch.matmul(Q,torch.transpose(r-x,0,1))) + torch.matmul(u,torch.matmul(R,torch.transpose(u,0,1))))[0,0]
-		u_poss = np.linspace(-2,2,50)
+		u_poss = np.linspace(-3,3,50)
 		tt,uu = np.meshgrid(range(T), u_poss, indexing='ij')
 		J_surf = np.zeros(np.shape(tt))
-		N = 2
-		rho = 0.004
+		N = 10
+		rho = 0.01
 		optimizer = torch.optim.SGD([u_t], lr=rho)
 		total_Cost = 0
 		for t in range(T):
@@ -314,7 +317,7 @@ if __name__ == '__main__':
 		ax1 = fig.add_subplot(111, projection='3d')
 		ax1.plot_surface(tt,uu,np.log(J_surf), rstride=1, cstride=1, cmap=cm.coolwarm, linewidth=0, antialiased=False)
 		plt.plot(range(T), x_vec, label='x', zorder=10)
-		plt.plot(range(T), [-0.5]*T, label='r', zorder=11)
+		# plt.plot(range(T), [-0.5]*T, label='r', zorder=11)
 		plt.plot(range(T), u_vec, label='u', zorder=12)
 		ax1.view_init(azim=-90, elev=90)
 		plt.legend(loc='lower center', ncol=3)
